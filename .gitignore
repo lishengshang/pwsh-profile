@@ -1,0 +1,27 @@
+# ==============================================================
+# PowerShell 配置仓库 .gitignore
+# ==============================================================
+
+# 第三方模块（通过 Install-Module / psc add 安装，不纳入版本管理）
+Modules/
+
+# PSReadLine 历史记录
+ConsoleHost_history.txt
+
+# 临时 / 缓存文件
+*.log
+*.tmp
+*starship-init-cache*
+*zoxide-init-cache*
+
+# 个人壁纸目录（如果有人把图片放进仓库）
+Wallpapers/
+*.jpg
+*.jpeg
+*.png
+*.webp
+
+# 操作系统杂项
+Thumbs.db
+Desktop.ini
+.DS_Store
