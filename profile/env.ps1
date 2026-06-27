@@ -23,6 +23,12 @@ if (Get-Command fnm -ErrorAction SilentlyContinue) {
     }
 }
 
+# 默认编辑器：让 git / npm edit / crontab 等所有遵循 EDITOR/VISUAL 的工具统一走 nvim
+if (-not $env:EDITOR -and (Get-Command nvim -ErrorAction SilentlyContinue)) {
+    $env:EDITOR = 'nvim'
+    $env:VISUAL = 'nvim'
+}
+
 # Scoop（PSCompletions 的 scoop hooks 依赖此变量）
 if (-not $env:SCOOP -and (Get-Command scoop -ErrorAction SilentlyContinue)) {
     $env:SCOOP = Split-Path (Split-Path (Get-Command scoop).Source)
