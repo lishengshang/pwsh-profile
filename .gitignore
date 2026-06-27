@@ -13,6 +13,10 @@ ConsoleHost_history.txt
 *.tmp
 *starship-init-cache*
 *zoxide-init-cache*
+*fnm-init-cache*
+
+# AI agent 规则文件（本地）
+AGENTS.md
 
 # 个人壁纸目录（如果有人把图片放进仓库）
 Wallpapers/
