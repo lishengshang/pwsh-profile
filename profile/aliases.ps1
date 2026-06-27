@@ -4,7 +4,7 @@
 function ..   { Set-Location .. }
 function ...  { Set-Location ../.. }
 function .... { Set-Location ../../.. }
-function ~    { Set-Location $HOME }
+# 注：PowerShell 原生支持 `cd ~`，故不再定义 ~ 函数（函数名 ~ 永远不会被解析）
 function mkcd ($dir) { New-Item -ItemType Directory -Path $dir -Force | Out-Null; Set-Location $dir }
 
 # ==============================================================
@@ -18,17 +18,21 @@ if (Get-Command eza -ErrorAction SilentlyContinue) {
     function lt  { eza --icons --tree --level=2 @args }
     function llt { eza --icons -l --tree --level=2 --git @args }
 } else {
+    function ls  { Get-ChildItem @args }
     function ll  { Get-ChildItem @args }
     function la  { Get-ChildItem -Force @args }
+    function lt  { Get-ChildItem -Recurse -Depth 1 @args }
+    function llt { Get-ChildItem -Recurse -Depth 1 @args }
 }
 
 # ==============================================================
 # Profile 管理
 # ==============================================================
-function Edit-Profile   { code $PROFILE }
-function Reload-Profile { . $PROFILE }
-Set-Alias -Name ep -Value Edit-Profile
-Set-Alias -Name rp -Value Reload-Profile -Force
+# 使用未批准动词会触发警告，故采用普通命名 + 别名
+function profile-edit   { code $PROFILE }
+function profile-reload { . $PROFILE }
+Set-Alias -Name ep -Value profile-edit -Force
+Set-Alias -Name rp -Value profile-reload -Force
 
 # ==============================================================
 # Linux 移植（优先使用现代替代工具）
@@ -40,7 +44,12 @@ function which ($cmd) {
         Write-Host "用法: which <命令名称>" -ForegroundColor Yellow
         return
     }
-    Get-Command $cmd -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source
+    $c = Get-Command $cmd -ErrorAction SilentlyContinue
+    if (-not $c) {
+        Write-Host "未找到命令: $cmd" -ForegroundColor Yellow
+        return
+    }
+    $c | Select-Object -ExpandProperty Source
 }
 
 # grep -> ripgrep (rg)
@@ -50,9 +59,9 @@ if (Get-Command rg -ErrorAction SilentlyContinue) {
     function grep { Select-String @args }
 }
 
-# find -> fd
+# find -> fd（使用别名而非函数，避免覆盖 find.exe 在脚本中的显式调用）
 if (Get-Command fd -ErrorAction SilentlyContinue) {
-    function find { fd @args }
+    Set-Alias -Name find -Value fd -Force -Option AllScope
 }
 
 # cat -> bat（如果安装了的话）
@@ -80,16 +89,25 @@ function gb   { git branch @args }
 function gst  { git stash @args }
 function grs  { git restore @args }
 function gbn  { git rev-parse --abbrev-ref HEAD }
-function gquick ($msg) { git add --all; git commit -m $msg; git push }
+function gquick ($msg) {
+    if (-not $msg) { Write-Host "用法: gquick <commit message>" -ForegroundColor Yellow; return }
+    git add --all
+    if ($LASTEXITCODE -ne 0) { return }
+    git commit -m $msg
+    if ($LASTEXITCODE -ne 0) { return }
+    git push
+}
 
 # ==============================================================
-# 网络 / 系统
+# 网络 / 系统（避免覆盖系统命令，使用 ps- 前缀）
 # ==============================================================
-function reboot ($delay = 0) { shutdown.exe /r /t $delay }
-function shutdown ($delay = 0) { shutdown.exe /s /t $delay }
-function hibernate { shutdown.exe /h }
-function sleep { rundll32.exe powrprof.dll,SetSuspendState 0,1,0 }
-function lock { rundll32.exe user32.dll,LockWorkStation }
+function ps-reboot    ($delay = 0) { shutdown.exe /r /t $delay }
+function ps-shutdown  ($delay = 0) { shutdown.exe /s /t $delay }
+function ps-hibernate { shutdown.exe /h }
+function ps-suspend   { rundll32.exe powrprof.dll,SetSuspendState Sleep }
+function ps-lock      { rundll32.exe user32.dll,LockWorkStation }
+Set-Alias -Name lock -Value ps-lock
+
 function Get-PublicIP { (Invoke-RestMethod -Uri "https://ifconfig.me/ip" -TimeoutSec 5).Trim() }
 Set-Alias -Name myip -Value Get-PublicIP
 
@@ -103,7 +121,7 @@ function Get-PortProcess ($port) {
 }
 Set-Alias -Name portof -Value Get-PortProcess
 
-function Kill-Port ($port) {
+function Stop-Port ($port) {
     $conns = Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue
     if (-not $conns) { Write-Host "端口 $port 未被占用" -ForegroundColor Green; return }
     $conns | ForEach-Object {
@@ -112,7 +130,7 @@ function Kill-Port ($port) {
         Stop-Process -Id $_.OwningProcess -Force
     }
 }
-Set-Alias -Name killport -Value Kill-Port
+Set-Alias -Name killport -Value Stop-Port
 
 # ==============================================================
 # 文件工具
