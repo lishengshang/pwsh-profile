@@ -18,12 +18,8 @@ ConsoleHost_history.txt
 # AI agent 规则文件（本地）
 AGENTS.md
 
-# 个人壁纸目录（如果有人把图片放进仓库）
+# 个人壁纸目录（壁纸文件不纳入版本管理）
 Wallpapers/
-*.jpg
-*.jpeg
-*.png
-*.webp
 
 # 操作系统杂项
 Thumbs.db

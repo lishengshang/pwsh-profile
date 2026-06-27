@@ -9,7 +9,7 @@ param(
 
 # ================= 默认配置 =================
 $API_URL = "https://t.alcy.cc/pc/"
-$SAVE_DIR = "C:\Users\remio\Pictures\Wallpapers"
+$SAVE_DIR = Join-Path $env:USERPROFILE "Pictures\Wallpapers"
 $KEEP_COUNT = 40
 $UPSCALE_THRESHOLD = 3000
 
@@ -114,20 +114,7 @@ $FINAL_PATH = $RAW_PATH
 $MSG_EXTRA = ""
 
 if ($ENABLE_UPSCALE) {
-    $IMG_WIDTH = 0
-
-    try {
-        $bi = New-Object System.Windows.Media.Imaging.BitmapImage
-        $bi.BeginInit()
-        $bi.CacheOption = [System.Windows.Media.Imaging.BitmapCacheOption]::OnLoad
-        $bi.UriSource = [Uri]("file:///" + $RAW_PATH.Replace("\", "/"))
-        $bi.EndInit()
-        $IMG_WIDTH = $bi.PixelWidth
-    } catch {
-        Send-Notify -Title "Wallpaper Error" -Body "Cannot read image dimensions" -Urgency "critical"
-        Remove-Item $RAW_PATH -Force
-        exit 1
-    }
+    $IMG_WIDTH = $bi.PixelWidth
 
     if ($IMG_WIDTH -lt $UPSCALE_THRESHOLD) {
         # 需要超分，检查工具是否存在
@@ -139,7 +126,8 @@ if ($ENABLE_UPSCALE) {
         }
 
         Send-Notify -Title "Wallpaper" -Body "Upscaling ${IMG_WIDTH}px image..."
-        $UPSCALED_PATH = [System.IO.Path]::ChangeExtension($RAW_PATH, ".png")
+        # ponytail: 用后缀避免 ChangeExtension 在已经是 .png 时返回原路径导致 waifu2x 读写同一文件
+        $UPSCALED_PATH = [System.IO.Path]::ChangeExtension($RAW_PATH, ".upscaled.png")
 
         try {
             & waifu2x-ncnn-vulkan -i $RAW_PATH -o $UPSCALED_PATH -n 1 -s 2

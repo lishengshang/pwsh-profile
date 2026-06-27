@@ -122,10 +122,10 @@ Set-Alias -Name portof -Value Get-PortProcess
 function Stop-Port ($port) {
     $conns = Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue
     if (-not $conns) { Write-Host "端口 $port 未被占用" -ForegroundColor Green; return }
-    $conns | ForEach-Object {
-        $proc = Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue
-        Write-Host "终止: $($proc?.Name) (PID $($_.OwningProcess))" -ForegroundColor Yellow
-        Stop-Process -Id $_.OwningProcess -Force
+    $conns.OwningProcess | Sort-Object -Unique | ForEach-Object {
+        $proc = Get-Process -Id $_ -ErrorAction SilentlyContinue
+        Write-Host "终止: $($proc?.Name) (PID $_)" -ForegroundColor Yellow
+        Stop-Process -Id $_ -Force
     }
 }
 Set-Alias -Name killport -Value Stop-Port

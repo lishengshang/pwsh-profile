@@ -22,8 +22,10 @@ function prompt {
     Remove-Item Function:\prompt -ErrorAction SilentlyContinue
     if (Test-Path $global:__starshipCache) {
         . $global:__starshipCache
-    } else {
+    } elseif (Get-Command starship -ErrorAction SilentlyContinue) {
         Invoke-Expression (&starship init powershell | Out-String)
+    } else {
+        'PS> '
     }
     prompt
 }
