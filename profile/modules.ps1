@@ -23,8 +23,12 @@ if (Get-Command zoxide -ErrorAction SilentlyContinue) {
     }
 }
 
-# 注册 OnIdle 事件，在第一次空闲（通常是首个 prompt 渲染后）懒加载重量级模块
-$null = Register-EngineEvent -SourceIdentifier PowerShell.OnIdle -SupportEvent -Action {
+# 防止重复订阅（如手动 dot-source profile 时）
+Unregister-Event -SourceIdentifier PowerShell.OnIdle -ErrorAction SilentlyContinue
+
+# OnIdle 懒加载（不用 -SupportEvent，避免阻止 exit）
+# Action 在主 runspace 同步执行，首个 prompt 后触发一次
+$null = Register-EngineEvent -SourceIdentifier PowerShell.OnIdle -Action {
     # 仅执行一次
     Unregister-Event -SourceIdentifier PowerShell.OnIdle -ErrorAction SilentlyContinue
 

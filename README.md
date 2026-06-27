@@ -46,7 +46,7 @@ PowerShell/
    rm $env:LOCALAPPDATA\nvim\.git -Recurse -Force   # 改成自己的仓库
    ```
 
-5. 重新打开 PowerShell 或执行 `. $PROFILE`（别名 `rp`）。
+5. 重新打开 PowerShell 或执行 `. $PROFILE` 使配置生效。
 
 ## 依赖工具
 
@@ -95,7 +95,6 @@ pwsh                    # 开新终端查看
 
 | 命令 | 说明 |
 |---|---|
-| `rp` | 重新加载 profile |
 | `ep` | 用 VS Code 编辑 profile |
 
 ### 导航
@@ -162,6 +161,6 @@ pwsh                    # 开新终端查看
 ## 设计说明
 
 - **避免覆盖系统命令**：`shutdown`/`reboot`/`hibernate`/`suspend` 改用 `ps-` 前缀，`find` 改用别名（`find.exe` 仍可显式调用）。
-- **未批准动词规避**：`Edit-Profile`/`Reload-Profile` 改为 `profile-edit`/`profile-reload`，避免 PowerShell 的未批准动词警告。
+- **未批准动词规避**：`Edit-Profile` 改为 `profile-edit`，避免 PowerShell 的未批准动词警告。
 - **`$LASTEXITCODE` 串联**：`gquick` 在 add/commit 失败时中止，不会盲目 push。
 - **缓存原子写入**：所有外部工具 init 缓存（starship/zoxide/fnm）都先写到 `.tmp` 再 Move，校验 `$LASTEXITCODE -eq 0` 且输出非空。

@@ -30,9 +30,7 @@ if (Get-Command eza -ErrorAction SilentlyContinue) {
 # ==============================================================
 # 使用未批准动词会触发警告，故采用普通命名 + 别名
 function profile-edit   { code $PROFILE }
-function profile-reload { . $PROFILE }
 Set-Alias -Name ep -Value profile-edit -Force
-Set-Alias -Name rp -Value profile-reload -Force
 
 # ==============================================================
 # Linux 移植（优先使用现代替代工具）
