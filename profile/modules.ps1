@@ -26,14 +26,14 @@ if (Get-Command zoxide -ErrorAction SilentlyContinue) {
 # 防止重复订阅（如手动 dot-source profile 时）
 Unregister-Event -SourceIdentifier PowerShell.OnIdle -ErrorAction SilentlyContinue
 
+# 立即加载：psc 是常用命令，首个 prompt 就可能用
+Import-Module PSCompletions -ErrorAction SilentlyContinue
+
 # OnIdle 懒加载（不用 -SupportEvent，避免阻止 exit）
 # Action 在主 runspace 同步执行，首个 prompt 后触发一次
 $null = Register-EngineEvent -SourceIdentifier PowerShell.OnIdle -Action {
     # 仅执行一次
     Unregister-Event -SourceIdentifier PowerShell.OnIdle -ErrorAction SilentlyContinue
-
-    # PSCompletions
-    Import-Module PSCompletions -ErrorAction SilentlyContinue
 
     # PSFzf（Ctrl+t 查文件，Ctrl+r 搜历史）
     if (Get-Command fzf -ErrorAction SilentlyContinue) {
