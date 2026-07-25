@@ -2,76 +2,110 @@
 
 模块化的 PowerShell 7 配置，采用类 XDG 的分文件结构，集成现代命令行工具（eza / zoxide / starship / fzf / LazyVim 等）。启动优化后冷启动 ~300ms、热启动 ~120ms。
 
+> **设计原则**：所有外部工具均通过 PATH 解析，不绑定任何包管理器。工具缺失时自动回退到 PowerShell 内置命令，配置始终可加载。
+
 ## 目录结构
 
 ```
 PowerShell/
-├── Microsoft.PowerShell_profile.ps1   # 入口：按顺序加载各模块（带计时门控）
+├── Microsoft.PowerShell_profile.ps1   # 入口：批量探测工具 + 按顺序加载各模块（带计时门控）
 ├── profile/
-│   ├── env.ps1          # 环境初始化（fnm 缓存、EDITOR/VISUAL=nvim、scoop）
+│   ├── env.ps1          # 环境初始化（fnm 缓存、EDITOR/VISUAL=nvim）
 │   ├── prompt.ps1       # starship 提示符（7 天缓存 + 原子写入 + 懒加载）
 │   ├── psreadline.ps1   # PSReadLine 配置（预测、配色、快捷键；非交互环境自动跳过）
 │   ├── modules.ps1      # zoxide 缓存 + PSCompletions/PSFzf 通过 OnIdle 懒加载
 │   └── aliases.ps1      # 别名与函数
 ├── Scripts/
 │   └── wallpaper.ps1    # 壁纸自动下载脚本
+├── setup.ps1            # 一键安装脚本（符号链接/复制 + 自动备份原配置）
 └── powershell.config.json
 ```
 
+## 前置条件
+
+| 条件 | 要求 |
+|---|---|
+| PowerShell | **7+**（`pwsh`）。配置使用 `& ` 调用、`??`、`?.` 等 PS7 语法 |
+| 执行策略 | `RemoteSigned`（`setup.ps1` 会自动写入 `powershell.config.json`）|
+| Git | 用于克隆本仓库 |
+| winget | Windows 10 1809+ 自带（App Installer），用于安装依赖工具 |
+
+> Windows PowerShell 5.1（`powershell.exe`）不支持，请用 `pwsh`。
+
 ## 安装
 
-1. 克隆仓库到任意位置（例如 `~/repos/pwsh-profile`）：
+### 1. 克隆仓库
 
-   ```powershell
-   git clone https://github.com/lishengshang/pwsh-profile.git ~/repos/pwsh-profile
-   cd ~/repos/pwsh-profile
-   ```
+```powershell
+git clone <repo-url> ~/repos/pwsh-profile
+cd ~/repos/pwsh-profile
+```
 
-2. 运行安装脚本（自动创建符号链接/复制到 `$PROFILE` 目录，并备份原配置）：
+### 2. 运行安装脚本
 
-   ```powershell
-   .\setup.ps1
-   ```
+```powershell
+.\setup.ps1
+```
 
-3. 安装依赖模块：
+脚本会把 `Microsoft.PowerShell_profile.ps1` / `profile/` / `Scripts/` / `powershell.config.json` 链接（或复制）到 `$PROFILE` 所在目录，并自动备份原配置到 `backup-<时间戳>` 子目录。
 
-   ```powershell
-   Install-Module PSCompletions, PSFzf -Scope CurrentUser
-   ```
+> 符号链接需要开发者模式或管理员权限；未开启时脚本自动回退到复制模式。
 
-4. 安装现代命令行工具（推荐用 scoop）：
+### 3. 安装 PowerShell 模块
 
-   ```powershell
-   scoop install starship eza zoxide fzf fd ripgrep bat 7zip fnm neovim
-   ```
+```powershell
+Install-Module PSCompletions, PSFzf -Scope CurrentUser
+```
 
-5. 安装 [LazyVim](https://www.lazyvim.org/)（Neovim 配置框架）：
+### 4. 安装命令行工具（winget）
 
-   ```powershell
-   # 需要 Neovim >= 0.9
-   git clone https://github.com/LazyVim/starter $env:LOCALAPPDATA\nvim
-   rm $env:LOCALAPPDATA\nvim\.git -Recurse -Force   # 改成自己的仓库
-   ```
+一行装齐全部依赖：
 
-6. 重新打开 PowerShell 或执行 `. $PROFILE` 使配置生效。
+```powershell
+winget install --id Starship.Starship -e `
+  && winget install --id eza-community.eza -e `
+  && winget install --id ajeetdsouza.zoxide -e `
+  && winget install --id BurntSushi.ripgrep.MSVC -e `
+  && winget install --id sharkdp.fd -e `
+  && winget install --id sharkdp.bat -e `
+  && winget install --id 7zip.7zip -e `
+  && winget install --id junegunn.fzf -e `
+  && winget install --id Schniz.fnm -e `
+  && winget install --id neovim.neovim -e
+```
+
+> PowerShell 中 `&&` 需 PS7+。装完后**新开一个终端**让 winget 注入的 PATH 生效。
+
+### 5. （可选）安装 LazyVim
+
+```powershell
+# 需要 Neovim >= 0.9
+git clone https://github.com/LazyVim/starter $env:LOCALAPPDATA\nvim
+Remove-Item $env:LOCALAPPDATA\nvim\.git -Recurse -Force   # 改成自己的仓库
+```
+
+### 6. 重新打开 PowerShell
+
+执行 `pwsh`，或 `. $PROFILE` 重新加载配置。
 
 ## 依赖工具
 
-| 工具 | 用途 | 替代的命令 |
-|---|---|---|
-| starship | 提示符（懒加载） | 默认 prompt |
-| eza | 文件列表（图标 + git） | `ls` / `ll` / `la` / `lt` |
-| zoxide | 智能目录跳转 | `cd` / `z` |
-| fzf + PSFzf | 模糊查找（Ctrl+t / Ctrl+r） | — |
-| fd | 文件查找（别名 `find`） | `find` |
-| ripgrep | 内容搜索 | `grep` |
-| bat | 查看文件（高亮） | `cat` |
-| 7zip | 解压 | `unzip` |
-| fnm | Node 版本管理 | — |
-| Neovim + LazyVim | 默认编辑器（`$EDITOR` / `$VISUAL`） | git commit / npm edit 等 |
-| PSCompletions | 命令补全（git / scoop / winget 等，OnIdle 懒加载） | — |
+| 工具 | winget ID | 用途 | 缺失时回退 |
+|---|---|---|---|
+| starship | `Starship.Starship` | 提示符（懒加载） | 默认 prompt |
+| eza | `eza-community.eza` | 文件列表（图标 + git） | `Get-ChildItem` |
+| zoxide | `ajeetdsouza.zoxide` | 智能目录跳转（`z`） | `cd` |
+| ripgrep | `BurntSushi.ripgrep.MSVC` | 内容搜索 | `Select-String` |
+| fd | `sharkdp.fd` | 文件查找（别名 `find`） | `find.exe` |
+| bat | `sharkdp.bat` | 查看文件（高亮） | `Get-Content` |
+| 7zip | `7zip.7zip` | 解压 | `Expand-Archive` |
+| fzf | `junegunn.fzf` | 模糊查找（Ctrl+t / Ctrl+r） | - |
+| fnm | `Schniz.fnm` | Node 版本管理 | - |
+| Neovim | `neovim.neovim` | 默认编辑器（`$EDITOR`/`$VISUAL`） | - |
+| PSCompletions | （`Install-Module`）| 命令补全（git/winget 等，OnIdle 懒加载） | - |
+| PSFzf | （`Install-Module`）| fzf 与 PSReadLine 集成 | - |
 
-部分工具缺失时会自动回退到 PowerShell 内置命令。
+> 所有工具均为可选。配置启动时一次性探测（`Get-Command` 批量调用），缺失的工具其别名/函数自动跳过或回退到内置命令，profile 不会因缺工具而报错。
 
 ## 启动性能
 
@@ -90,8 +124,8 @@ PowerShell/
 ### 调试启动
 
 ```powershell
-$env:PROFILE_DEBUG=1    # 开启耗时打印
-pwsh                    # 开新终端查看
+$env:PROFILE_DEBUG = 1    # 开启耗时打印
+pwsh                      # 开新终端查看
 ```
 
 缓存文件位于 `$env:TEMP\{starship,zoxide,fnm}-init-cache.ps1`，工具升级后删除即可强制刷新。
@@ -135,7 +169,7 @@ pwsh                    # 开新终端查看
 | `gco` / `gcb` | checkout / checkout -b |
 | `gb` / `gst` / `grs` | branch / stash / restore |
 | `gbn` | 当前分支名 |
-| `gquick <msg>` | add --all → commit → push（失败即中止） |
+| `gquick <msg>` | add --all -> commit -> push（失败即中止） |
 
 ### 系统与网络
 
@@ -150,7 +184,7 @@ pwsh                    # 开新终端查看
 | `ps-suspend` | 睡眠 |
 | `lock` | 锁屏 |
 
-> 电源命令使用 `ps-` 前缀以避免覆盖系统 `shutdown.exe`；调用系统原命令请用 `shutdown.exe` / `reboot.exe`。
+> 电源命令使用 `ps-` 前缀以避免覆盖系统 `shutdown.exe`；调用系统原命令请用 `shutdown.exe`。
 
 ### 文件工具
 
@@ -167,6 +201,7 @@ pwsh                    # 开新终端查看
 
 ## 设计说明
 
+- **不绑定包管理器**：所有工具通过 PATH 解析，winget / 手动安装均可，不依赖 scoop shim（避免 SSH 远程会话下 shim 的 GUI/控制台检测崩溃）。
 - **避免覆盖系统命令**：`shutdown`/`reboot`/`hibernate`/`suspend` 改用 `ps-` 前缀，`find` 改用别名（`find.exe` 仍可显式调用）。
 - **未批准动词规避**：`Edit-Profile` 改为 `profile-edit`，避免 PowerShell 的未批准动词警告。
 - **`$LASTEXITCODE` 串联**：`gquick` 在 add/commit 失败时中止，不会盲目 push。
