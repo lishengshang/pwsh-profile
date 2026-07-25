@@ -17,9 +17,6 @@ $ENABLE_CLEANUP = $false
 $ENABLE_UPSCALE = $true
 $SILENT_MODE = $false
 
-# ================= 加载依赖 =================
-Add-Type -AssemblyName PresentationCore
-
 # ================= 辅助函数 =================
 function Show-Usage {
     Write-Host "用法: wallpaper [-c] [-n] [-s] [-h]"
@@ -94,6 +91,9 @@ if ($fileInfo.Length -lt 20480) {
     Remove-Item $RAW_PATH -Force
     exit 1
 }
+
+# 仅在下载成功后加载 WPF（避免失败路径白白加载 assembly）
+Add-Type -AssemblyName PresentationCore
 
 try {
     $bi = New-Object System.Windows.Media.Imaging.BitmapImage
