@@ -10,7 +10,7 @@ function mkcd ($dir) { New-Item -ItemType Directory -Path $dir -Force | Out-Null
 # ==============================================================
 # ls 变体（基于 eza）
 # ==============================================================
-if (Get-Command eza -ErrorAction SilentlyContinue) {
+if ($global:__Tools.ContainsKey('eza')) {
     Remove-Item Alias:ls -Force -ErrorAction SilentlyContinue
     function ls  { eza --icons @args }
     function ll  { eza --icons -l --git @args }
@@ -51,19 +51,19 @@ function which ($cmd) {
 }
 
 # grep -> ripgrep (rg)
-if (Get-Command rg -ErrorAction SilentlyContinue) {
+if ($global:__Tools.ContainsKey('rg')) {
     function grep { rg @args }
-} elseif (-not (Get-Command grep.exe -ErrorAction SilentlyContinue)) {
+} elseif (-not $global:__Tools.ContainsKey('grep')) {
     function grep { Select-String @args }
 }
 
 # find -> fd（使用别名而非函数，避免覆盖 find.exe 在脚本中的显式调用）
-if (Get-Command fd -ErrorAction SilentlyContinue) {
+if ($global:__Tools.ContainsKey('fd')) {
     Set-Alias -Name find -Value fd -Force -Option AllScope
 }
 
 # cat -> bat（如果安装了的话）
-if (Get-Command bat -ErrorAction SilentlyContinue) {
+if ($global:__Tools.ContainsKey('bat')) {
     Remove-Item Alias:cat -Force -ErrorAction SilentlyContinue
     function cat { bat @args }
 }
@@ -112,7 +112,7 @@ Set-Alias -Name myip -Value Get-PublicIP
 function Get-PortProcess ($port) {
     $conns = Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue
     if (-not $conns) { Write-Host "端口 $port 未被占用" -ForegroundColor Green; return }
-    $conns | ForEach-Object {
+    $conns | Sort-Object OwningProcess -Unique | ForEach-Object {
         $proc = Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue
         [PSCustomObject]@{ Port = $port; PID = $_.OwningProcess; Process = $proc?.Name }
     }
@@ -134,7 +134,7 @@ Set-Alias -Name killport -Value Stop-Port
 # 文件工具
 # ==============================================================
 # unzip -> 7z（更快，支持更多格式）
-if (Get-Command 7z -ErrorAction SilentlyContinue) {
+if ($global:__Tools.ContainsKey('7z')) {
     function unzip ($file) { 7z x $file -y -o. @args }
 } else {
     function unzip ($file) { Expand-Archive -Path $file -DestinationPath . -Force }

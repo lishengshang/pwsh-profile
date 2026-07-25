@@ -1,7 +1,6 @@
 # ==============================================================
 # PowerShell Profile - 模块化入口
 # ==============================================================
-
 # 全局变量：profile 根目录，供子模块引用
 $global:__ProfileDir = Split-Path $PROFILE
 
@@ -10,6 +9,12 @@ $_debug = [bool]$env:PROFILE_DEBUG
 
 # 加载计时（仅 debug 模式下使用）
 if ($_debug) { $_total = [System.Diagnostics.Stopwatch]::StartNew() }
+
+# 批量探测工具是否存在（一次 cmdlet 调用替代各模块中的多次 Get-Command）
+$global:__Tools = @{}
+foreach ($cmd in Get-Command eza,rg.exe,grep.exe,fd.exe,bat.exe,7z.exe,fnm,nvim,zoxide,fzf,starship -ErrorAction SilentlyContinue) {
+    $global:__Tools[[System.IO.Path]::GetFileNameWithoutExtension($cmd.Name)] = $cmd
+}
 
 # 按顺序加载各模块
 $modules = @(

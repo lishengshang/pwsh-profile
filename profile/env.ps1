@@ -3,10 +3,10 @@
 # ==============================================================
 
 # fnm (Node 版本管理) —— 缓存 7 天，原子写入
-if (Get-Command fnm -ErrorAction SilentlyContinue) {
+if ($global:__Tools.ContainsKey('fnm')) {
     $_fnmCache = "$env:TEMP\fnm-init-cache.ps1"
-    if (-not (Test-Path $_fnmCache) -or
-        (Get-Item $_fnmCache).LastWriteTime -lt (Get-Date).AddDays(-7)) {
+    $_item = Get-Item $_fnmCache -ErrorAction SilentlyContinue
+    if (-not $_item -or $_item.LastWriteTime -lt (Get-Date).AddDays(-7)) {
         try {
             $_fnmOut = fnm env --use-on-cd --shell powershell 2>$null | Out-String
             if ($LASTEXITCODE -eq 0 -and $_fnmOut.Trim()) {
@@ -24,12 +24,7 @@ if (Get-Command fnm -ErrorAction SilentlyContinue) {
 }
 
 # 默认编辑器：让 git / npm edit / crontab 等所有遵循 EDITOR/VISUAL 的工具统一走 nvim
-if (-not $env:EDITOR -and (Get-Command nvim -ErrorAction SilentlyContinue)) {
+if (-not $env:EDITOR -and $global:__Tools.ContainsKey('nvim')) {
     $env:EDITOR = 'nvim'
     $env:VISUAL = 'nvim'
-}
-
-# Scoop（PSCompletions 的 scoop hooks 依赖此变量）
-if (-not $env:SCOOP -and (Get-Command scoop -ErrorAction SilentlyContinue)) {
-    $env:SCOOP = Split-Path (Split-Path (Get-Command scoop).Source)
 }
