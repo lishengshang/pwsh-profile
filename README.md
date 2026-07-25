@@ -20,25 +20,32 @@ PowerShell/
 
 ## 安装
 
-1. 克隆到 PowerShell 配置目录：
+1. 克隆仓库到任意位置（例如 `~/repos/pwsh-profile`）：
 
    ```powershell
-   git clone <repo-url> $(Split-Path $PROFILE)
+   git clone https://github.com/lishengshang/pwsh-profile.git ~/repos/pwsh-profile
+   cd ~/repos/pwsh-profile
    ```
 
-2. 安装依赖模块：
+2. 运行安装脚本（自动创建符号链接/复制到 `$PROFILE` 目录，并备份原配置）：
+
+   ```powershell
+   .\setup.ps1
+   ```
+
+3. 安装依赖模块：
 
    ```powershell
    Install-Module PSCompletions, PSFzf -Scope CurrentUser
    ```
 
-3. 安装现代命令行工具（推荐用 scoop）：
+4. 安装现代命令行工具（推荐用 scoop）：
 
    ```powershell
    scoop install starship eza zoxide fzf fd ripgrep bat 7zip fnm neovim
    ```
 
-4. 安装 [LazyVim](https://www.lazyvim.org/)（Neovim 配置框架）：
+5. 安装 [LazyVim](https://www.lazyvim.org/)（Neovim 配置框架）：
 
    ```powershell
    # 需要 Neovim >= 0.9
@@ -46,7 +53,7 @@ PowerShell/
    rm $env:LOCALAPPDATA\nvim\.git -Recurse -Force   # 改成自己的仓库
    ```
 
-5. 重新打开 PowerShell 或执行 `. $PROFILE` 使配置生效。
+6. 重新打开 PowerShell 或执行 `. $PROFILE` 使配置生效。
 
 ## 依赖工具
 
