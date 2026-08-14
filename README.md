@@ -14,7 +14,8 @@ PowerShell/
 │   ├── env.ps1            # 环境初始化（fnm 缓存、EDITOR/VISUAL=nvim）
 │   ├── prompt.ps1         # starship 提示符（缓存 + 原子写入 + 懒加载）
 │   ├── psreadline.ps1     # PSReadLine 配置（预测、配色、快捷键；非交互环境自动跳过）
-│   ├── modules.ps1        # zoxide 缓存 + PSCompletions/PSFzf 通过 OnIdle 懒加载
+│   ├── modules.ps1        # zoxide 懒加载 + PSCompletions/PSFzf 通过 OnIdle 懒加载
+│   ├── banner.ps1         # 启动画面（点阵大字 + 版本信息，OnIdle 一次性显示）
 │   └── aliases.ps1        # 别名与函数
 ├── Scripts/
 │   └── wallpaper.ps1      # 壁纸自动下载脚本
@@ -167,6 +168,13 @@ pwsh                      # 开新终端查看
 ```
 
 缓存文件位于 `$env:TEMP\{fnm,zoxide}-init-cache.ps1` 与 `$env:TEMP\starship-init-cache-v2.ps1`。缓存同时以「7 天 TTL」和「工具二进制更新时间」两个条件失效：**工具升级后下次启动自动重新生成，无需手动删除**。
+
+## 启动画面
+
+新开终端时显示一次点阵大字 `PWSH`（Solarized 渐变）和 pwsh 版本/日期，通过 OnIdle 在首个 prompt 渲染后输出，**不占用启动时间**。可调整：
+
+- 关闭：`$env:PROFILE_NO_BANNER = 1`
+- 改文字：编辑 `profile/banner.ps1` 的 `$script:__BannerText`（字库目前含 P/W/S/H 四个字母）
 
 ## 常用别名与函数
 

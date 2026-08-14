@@ -42,6 +42,7 @@ $modules = @(
     'prompt.ps1'
     'psreadline.ps1'
     'modules.ps1'
+    'banner.ps1'       # 启动画面（OnIdle 一次性显示，不阻塞启动）
     'aliases.ps1'
 )
 
