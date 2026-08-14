@@ -132,7 +132,7 @@ Remove-Item $env:LOCALAPPDATA\nvim\.git -Recurse -Force   # 改成自己的仓�
 | fd | `sharkdp.fd` | 文件查找（别名 `find`） | `find.exe` |
 | bat | `sharkdp.bat` | 查看文件（高亮） | `Get-Content` |
 | 7zip | `7zip.7zip` | 解压 | `Expand-Archive` |
-| fzf | `junegunn.fzf` | 模糊查找（Ctrl+t / Ctrl+r） | - |
+| fzf | `junegunn.fzf` | 模糊查找（Ctrl+t 文件 / Ctrl+r 历史 / Ctrl+g 前缀 git 和弦：+b 分支、+f 文件、+h 提交、+t tag） | - |
 | fnm | `Schniz.fnm` | Node 版本管理 | - |
 | Neovim | `neovim.neovim` | 默认编辑器（`$EDITOR`/`$VISUAL`） | - |
 | PSCompletions | （`Install-Module`）| 命令补全（git/winget 等，OnIdle 懒加载） | - |
@@ -209,12 +209,16 @@ pwsh                      # 开新终端查看
 | `gb` / `gst` / `grs` | branch / stash / restore |
 | `gbn` | 当前分支名 |
 | `gquick <msg>` | add --all -> commit -> push（失败即中止） |
+| `glog` | 详细日志（图形 + 颜色 + 日期/作者） |
+| `gup` | pull --rebase |
+| `gclean` | 清理已合并的本地分支（保护 main/master/dev） |
 
 ### 系统与网络
 
 | 命令 | 说明 |
 |---|---|
 | `myip` | 查询公网 IP（ifconfig.me / ipify / ipinfo 备用链） |
+| `wup` | winget 一键升级全部已安装工具 |
 | `portof <port>` | 查询占用端口的进程 |
 | `killport <port>` | 终止占用端口的进程 |
 | `ps-reboot [delay]` | 重启（不覆盖系统 `shutdown.exe`） |

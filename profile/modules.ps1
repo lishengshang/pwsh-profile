@@ -30,11 +30,12 @@ $null = Register-EngineEvent -SourceIdentifier PowerShell.OnIdle -Action {
     # PSCompletions（命令补全，首个 prompt 后加载）
     Import-Module PSCompletions -ErrorAction SilentlyContinue
 
-    # PSFzf（Ctrl+t 查文件，Ctrl+r 搜历史）
+    # PSFzf（Ctrl+t 查文件，Ctrl+r 搜历史；-GitKeyBindings: Ctrl+g, Ctrl+b/f/h/p/s/t
+    # 分别对应 git 分支/文件/提交哈希/PR/stash/tag 的 fzf 选择）
     if ($global:__Tools.ContainsKey('fzf')) {
         Import-Module PSFzf -ErrorAction SilentlyContinue
         if (Get-Command Set-PsFzfOption -ErrorAction SilentlyContinue) {
-            Set-PsFzfOption -PSReadlineChordProvider 'Ctrl+t' -PSReadlineChordReverseHistory 'Ctrl+r'
+            Set-PsFzfOption -PSReadlineChordProvider 'Ctrl+t' -PSReadlineChordReverseHistory 'Ctrl+r' -GitKeyBindings
         }
     }
 }

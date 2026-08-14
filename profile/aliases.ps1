@@ -111,6 +111,19 @@ function gquick ($msg) {
     git push
 }
 
+# 详细日志（图形 + 颜色 + 日期/作者）
+function glog {
+    git log --graph --pretty=format:'%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset' @args
+}
+
+function gup { git pull --rebase @args }
+
+# 清理已合并到当前分支的本地分支（保护 main/master/dev/develop 与当前分支）
+function gclean {
+    git branch --merged | Where-Object { $_ -notmatch '^\*' -and $_ -notmatch '\b(main|master|dev|develop)\b' } |
+        ForEach-Object { git branch -d $_.Trim() }
+}
+
 # ==============================================================
 # 网络 / 系统（避免覆盖系统命令，使用 ps- 前缀）
 # ==============================================================
@@ -132,6 +145,15 @@ function Get-PublicIP {
     Write-Host '无法获取公网 IP（网络问题或所有 API 均不可达）' -ForegroundColor Yellow
 }
 Set-Alias -Name myip -Value Get-PublicIP
+
+# winget 一键升级全部已安装工具
+function wup {
+    if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
+        Write-Host '未找到 winget（需要 Windows 10 1809+ 的 App Installer）' -ForegroundColor Yellow
+        return
+    }
+    winget upgrade --all @args
+}
 
 function Get-PortProcess ($port) {
     $conns = Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue
