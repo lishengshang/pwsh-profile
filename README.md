@@ -15,7 +15,8 @@ PowerShell/
 │   ├── prompt.ps1         # starship 提示符（缓存 + 原子写入 + 懒加载）
 │   ├── psreadline.ps1     # PSReadLine 配置（预测、配色、快捷键；非交互环境自动跳过）
 │   ├── modules.ps1        # zoxide 懒加载 + PSCompletions/PSFzf 通过 OnIdle 懒加载
-│   └── aliases.ps1        # 别名与函数
+│   ├── aliases.ps1        # 别名与函数
+│   └── startup.ps1        # 启动信息（问候/系统信息/键位速查）
 ├── Scripts/
 │   └── wallpaper.ps1      # 壁纸自动下载脚本
 ├── windows-terminal/      # Windows Terminal 主题（Solarized Dark + 使用说明）
@@ -170,7 +171,18 @@ pwsh                      # 开新终端查看
 
 ## 启动行为
 
-- **启动耗时显示**：每个新终端显示一行 `Profile loaded in 36ms`（青色）。关闭：`$env:PROFILE_NO_TIME = 1`
+新开终端时显示 4 行（均为毫秒级轻量读取，不拖慢启动）：
+
+```
+Hi lishe · 2026-08-14 周五
+Windows 11 Pro 23H2 · PS 7.6.4 · 8 核
+Ctrl+t 文件 · Ctrl+r 历史 · Ctrl+g git · gs 状态 · z 跳转 · .. 上级
+Profile loaded in 36ms
+```
+
+- 关闭耗时行：`$env:PROFILE_NO_TIME = 1`
+- 关闭信息行（问候/系统信息/键位速查）：`$env:PROFILE_NO_STARTUP = 1`
+- 信息行的键位部分在 fzf 未安装时自动省略
 - **setup 完成横幅**：运行 `setup.ps1` 安装完成时显示点阵大字 `PWSH`（Solarized 渐变）
 
 ## 常用别名与函数

@@ -43,6 +43,7 @@ $modules = @(
     'psreadline.ps1'
     'modules.ps1'
     'aliases.ps1'
+    'startup.ps1'      # 启动信息（问候/系统信息/键位速查，在耗时行前显示）
 )
 
 foreach ($mod in $modules) {
@@ -58,6 +59,8 @@ foreach ($mod in $modules) {
     }
 }
 
+# 启动信息（问候/系统信息/键位速查）+ 总耗时
+Show-StartupInfo
 if ($_debug) {
     Write-Host "TOTAL: $($_total.ElapsedMilliseconds)ms" -ForegroundColor Green
 }
