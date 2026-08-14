@@ -2,7 +2,8 @@
 # PowerShell 配置仓库 .gitignore
 # ==============================================================
 
-# 第三方模块（通过 Install-Module / psc add 安装，不纳入版本管理）
+# 第三方模块（pwsh 默认用户模块目录恰好位于仓库内，因为仓库即 $PROFILE 目录；
+# 通过 setup.ps1 / Install-Module 安装，不纳入版本管理）
 Modules/
 
 # PSReadLine 历史记录
@@ -17,9 +18,6 @@ ConsoleHost_history.txt
 
 # AI agent 规则文件（本地）
 AGENTS.md
-
-# 个人壁纸目录（壁纸文件不纳入版本管理）
-Wallpapers/
 
 # 操作系统杂项
 Thumbs.db

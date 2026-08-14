@@ -2,25 +2,9 @@
 # 模块加载（zoxide 同步缓存；PSCompletions / PSFzf 通过 OnIdle 懒加载）
 # ==============================================================
 
-# zoxide（缓存 7 天，原子写入）
-if ($global:__Tools.ContainsKey('zoxide')) {
-    $_zoxideCache = "$env:TEMP\zoxide-init-cache.ps1"
-    $_item = Get-Item $_zoxideCache -ErrorAction SilentlyContinue
-    if (-not $_item -or $_item.LastWriteTime -lt (Get-Date).AddDays(-7)) {
-        try {
-            $_zoxideOut = zoxide init powershell 2>$null | Out-String
-            if ($LASTEXITCODE -eq 0 -and $_zoxideOut.Trim()) {
-                $_tmp = "$_zoxideCache.tmp"
-                Set-Content -Path $_tmp -Value $_zoxideOut -Encoding UTF8
-                Move-Item -Path $_tmp -Destination $_zoxideCache -Force
-            }
-        } catch {
-            Write-Host "[zoxide] 缓存生成失败: $_" -ForegroundColor Yellow
-        }
-    }
-    if (Test-Path $_zoxideCache) {
-        . $_zoxideCache
-    }
+# zoxide（缓存 7 天 + 升级即失效，原子写入）
+if (Initialize-CachedInit -Command 'zoxide' -CacheFile "$env:TEMP\zoxide-init-cache.ps1" -Arguments @('init','powershell')) {
+    . "$env:TEMP\zoxide-init-cache.ps1"
 }
 
 # 防止重复订阅（如手动 dot-source profile 时）

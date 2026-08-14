@@ -18,6 +18,7 @@ foreach ($cmd in Get-Command eza,rg.exe,grep.exe,fd.exe,bat.exe,7z.exe,fnm,nvim,
 
 # 按顺序加载各模块
 $modules = @(
+    'init-cache.ps1'   # 缓存助手（供 env/prompt/modules 使用，必须最先加载）
     'env.ps1'
     'prompt.ps1'
     'psreadline.ps1'

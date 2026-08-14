@@ -3,22 +3,8 @@
 # ==============================================================
 $global:__starshipCache = "$env:TEMP\starship-init-cache.ps1"
 
-# 首次或缓存过期时同步生成（带原子写入，避免半写竞态）
-if ($global:__Tools.ContainsKey('starship')) {
-    $_item = Get-Item $global:__starshipCache -ErrorAction SilentlyContinue
-    if (-not $_item -or $_item.LastWriteTime -lt (Get-Date).AddDays(-7)) {
-        try {
-            $_starshipOut = & starship init powershell 2>$null | Out-String
-            if ($LASTEXITCODE -eq 0 -and $_starshipOut.Trim()) {
-                $_tmp = "$($global:__starshipCache).tmp"
-                Set-Content -Path $_tmp -Value $_starshipOut -Encoding UTF8
-                Move-Item -Path $_tmp -Destination $global:__starshipCache -Force
-            }
-        } catch {
-            Write-Host "[starship] 缓存生成失败: $_" -ForegroundColor Yellow
-        }
-    }
-}
+# 首次 / 缓存过期 / starship 升级时同步生成（原子写入，失败保留旧缓存）
+$null = Initialize-CachedInit -Command 'starship' -CacheFile $global:__starshipCache -Arguments @('init','powershell')
 
 function prompt {
     Remove-Item Function:\prompt -ErrorAction SilentlyContinue
@@ -26,8 +12,12 @@ function prompt {
         . $global:__starshipCache
     } elseif ($global:__Tools.ContainsKey('starship')) {
         Invoke-Expression (&starship init powershell | Out-String)
-    } else {
-        'PS> '
+    }
+    # 兜底：上方路径都未定义新的 prompt 函数时重建一个简单默认值，
+    # 否则 Remove-Item 之后调用 prompt 会报 CommandNotFoundException。
+    # 必须用 global: 限定——在函数体内定义普通 function 只存活于本次调用
+    if (-not (Get-Command prompt -ErrorAction SilentlyContinue)) {
+        function global:prompt { 'PS> ' }
     }
     prompt
 }

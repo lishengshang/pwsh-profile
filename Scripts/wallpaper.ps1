@@ -4,6 +4,7 @@ param(
     [switch]$c,
     [switch]$n,
     [switch]$s,
+    [switch]$strict,
     [switch]$h
 )
 
@@ -16,13 +17,16 @@ $UPSCALE_THRESHOLD = 3000
 $ENABLE_CLEANUP = $false
 $ENABLE_UPSCALE = $true
 $SILENT_MODE = $false
+# 默认降级：缺 waifu2x 或超分失败时用原图继续；-strict 才中止
+$ENABLE_STRICT = $false
 
 # ================= 辅助函数 =================
 function Show-Usage {
-    Write-Host "用法: wallpaper [-c] [-n] [-s] [-h]"
+    Write-Host "用法: wallpaper [-c] [-n] [-s] [-strict] [-h]"
     Write-Host "  -c  (Clean)   清理模式：自动清理旧壁纸，保留最近 $KEEP_COUNT 张"
     Write-Host "  -n  (No Up)   禁用超分：无论分辨率多少，都直接使用原图"
     Write-Host "  -s  (Silent)  静默模式：不发送任何通知"
+    Write-Host "  -strict       严格模式：缺 waifu2x 或超分失败时中止（默认降级用原图）"
     Write-Host "  -h  帮助信息"
     exit 0
 }
@@ -53,6 +57,7 @@ if ($h) { Show-Usage }
 if ($c) { $ENABLE_CLEANUP = $true }
 if ($n) { $ENABLE_UPSCALE = $false }
 if ($s) { $SILENT_MODE = $true }
+if ($strict) { $ENABLE_STRICT = $true }
 
 # ================= 主逻辑 =================
 if (-not (Test-Path $SAVE_DIR)) {
@@ -120,29 +125,36 @@ if ($ENABLE_UPSCALE) {
         # 需要超分，检查工具是否存在
         $waifu2xExists = Get-Command waifu2x-ncnn-vulkan -ErrorAction SilentlyContinue
         if (-not $waifu2xExists) {
-            Send-Notify -Title "Wallpaper Error" -Body "waifu2x not found, upscale aborted" -Urgency "critical"
-            Remove-Item $RAW_PATH -Force
-            exit 1
-        }
-
-        Send-Notify -Title "Wallpaper" -Body "Upscaling ${IMG_WIDTH}px image..."
-        # ponytail: 用后缀避免 ChangeExtension 在已经是 .png 时返回原路径导致 waifu2x 读写同一文件
-        $UPSCALED_PATH = [System.IO.Path]::ChangeExtension($RAW_PATH, ".upscaled.png")
-
-        try {
-            & waifu2x-ncnn-vulkan -i $RAW_PATH -o $UPSCALED_PATH -n 1 -s 2
-            if ($LASTEXITCODE -ne 0) {
-                Send-Notify -Title "Wallpaper Error" -Body "Upscale failed (exit $LASTEXITCODE)" -Urgency "critical"
+            if ($ENABLE_STRICT) {
+                Send-Notify -Title "Wallpaper Error" -Body "waifu2x not found, upscale aborted" -Urgency "critical"
                 Remove-Item $RAW_PATH -Force
                 exit 1
             }
-            $FINAL_PATH = $UPSCALED_PATH
-            $MSG_EXTRA = "(Upscaled 2x from ${IMG_WIDTH}px)"
-            Remove-Item $RAW_PATH -Force
-        } catch {
-            Send-Notify -Title "Wallpaper Error" -Body "Upscale crashed: $_" -Urgency "critical"
-            Remove-Item $RAW_PATH -Force
-            exit 1
+            # 默认降级：没有 waifu2x 时直接用原图（与 profile 的"缺工具自动回退"哲学一致）
+            Send-Notify -Title "Wallpaper" -Body "waifu2x not found, using original (${IMG_WIDTH}px)"
+            $MSG_EXTRA = "(waifu2x missing, original ${IMG_WIDTH}px)"
+        }
+        else {
+            Send-Notify -Title "Wallpaper" -Body "Upscaling ${IMG_WIDTH}px image..."
+            # ponytail: 用后缀避免 ChangeExtension 在已经是 .png 时返回原路径导致 waifu2x 读写同一文件
+            $UPSCALED_PATH = [System.IO.Path]::ChangeExtension($RAW_PATH, ".upscaled.png")
+
+            try {
+                & waifu2x-ncnn-vulkan -i $RAW_PATH -o $UPSCALED_PATH -n 1 -s 2
+                if ($LASTEXITCODE -ne 0) { throw "waifu2x exited with code $LASTEXITCODE" }
+                $FINAL_PATH = $UPSCALED_PATH
+                $MSG_EXTRA = "(Upscaled 2x from ${IMG_WIDTH}px)"
+                Remove-Item $RAW_PATH -Force
+            }
+            catch {
+                if ($ENABLE_STRICT) {
+                    Send-Notify -Title "Wallpaper Error" -Body "Upscale failed: $_" -Urgency "critical"
+                    Remove-Item $RAW_PATH -Force
+                    exit 1
+                }
+                Send-Notify -Title "Wallpaper" -Body "Upscale failed, using original: $_"
+                $MSG_EXTRA = "(upscale failed, original ${IMG_WIDTH}px)"
+            }
         }
     } else {
         $MSG_EXTRA = "(Original ${IMG_WIDTH}px, High-Res)"

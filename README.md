@@ -10,16 +10,41 @@
 PowerShell/
 ├── Microsoft.PowerShell_profile.ps1   # 入口：批量探测工具 + 按顺序加载各模块（带计时门控）
 ├── profile/
-│   ├── env.ps1          # 环境初始化（fnm 缓存、EDITOR/VISUAL=nvim）
-│   ├── prompt.ps1       # starship 提示符（7 天缓存 + 原子写入 + 懒加载）
-│   ├── psreadline.ps1   # PSReadLine 配置（预测、配色、快捷键；非交互环境自动跳过）
-│   ├── modules.ps1      # zoxide 缓存 + PSCompletions/PSFzf 通过 OnIdle 懒加载
-│   └── aliases.ps1      # 别名与函数
+│   ├── init-cache.ps1     # 外部工具 init 缓存助手（7 天 TTL + 升级即失效 + 原子写入）
+│   ├── env.ps1            # 环境初始化（fnm 缓存、EDITOR/VISUAL=nvim）
+│   ├── prompt.ps1         # starship 提示符（缓存 + 原子写入 + 懒加载）
+│   ├── psreadline.ps1     # PSReadLine 配置（预测、配色、快捷键；非交互环境自动跳过）
+│   ├── modules.ps1        # zoxide 缓存 + PSCompletions/PSFzf 通过 OnIdle 懒加载
+│   └── aliases.ps1        # 别名与函数
 ├── Scripts/
-│   └── wallpaper.ps1    # 壁纸自动下载脚本
-├── setup.ps1            # 一键安装脚本（符号链接/复制 + 自动备份原配置）
+│   └── wallpaper.ps1      # 壁纸自动下载脚本
+├── windows-terminal/      # Windows Terminal 主题（Solarized Dark + 使用说明）
+├── setup.ps1              # 一键安装脚本（符号链接/复制 + 自动备份 + 工具/模块安装）
+├── bootstrap.ps1          # 全新机器引导脚本（PS 5.1 可跑：装 pwsh/git + 克隆 + setup）
 └── powershell.config.json
 ```
+
+## 快速开始（新机器 / 给别人用）
+
+三种用法，按自动化程度从高到低：
+
+**方式一：一行引导（推荐，全新 Windows 机器）**
+
+在系统自带的 Windows PowerShell 5.1（开始菜单搜 `powershell`）里执行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/lishengshang/pwsh-profile/main/bootstrap.ps1 | iex"
+```
+
+> 这是从远程执行脚本，请确认来源可信后再运行。`bootstrap.ps1` 会自动完成：装 PowerShell 7 → 装 Git → 克隆本仓库到 `$HOME\Documents\PowerShell`（pwsh 的 `$PROFILE` 目录，profile 直接生效）→ 自动安装全部依赖工具与模块。
+
+**方式二：标准安装（已有 pwsh / 想装到其他目录）**
+
+见下方「安装」章节：`git clone` 到任意目录 → `.\setup.ps1`，文件通过符号链接（或复制）挂到 `$PROFILE`。
+
+**方式三：克隆到 `$PROFILE` 目录直用（仓库即配置）**
+
+把仓库克隆到 `$HOME\Documents\PowerShell` 后无需任何链接，`setup.ps1` 会自动检测到这一情况并跳过文件安装、只装工具与模块。作者本人就是这么用的。
 
 ## 前置条件
 
@@ -37,7 +62,7 @@ PowerShell/
 ### 1. 克隆仓库
 
 ```powershell
-git clone <repo-url> ~/repos/pwsh-profile
+git clone https://github.com/lishengshang/pwsh-profile.git ~/repos/pwsh-profile
 cd ~/repos/pwsh-profile
 ```
 
@@ -47,19 +72,27 @@ cd ~/repos/pwsh-profile
 .\setup.ps1
 ```
 
-脚本会把 `Microsoft.PowerShell_profile.ps1` / `profile/` / `Scripts/` / `powershell.config.json` 链接（或复制）到 `$PROFILE` 所在目录，并自动备份原配置到 `backup-<时间戳>` 子目录。
+脚本会：
+
+1. 把 `Microsoft.PowerShell_profile.ps1` / `profile/` / `Scripts/` / `powershell.config.json` 链接（或复制）到 `$PROFILE` 所在目录，并自动备份原配置到 `backup-<时间戳>` 子目录；
+2. **自动安装全部依赖**：用 winget 装齐 10 个命令行工具（见下方表格），用 `Install-Module` 装 PSCompletions / PSFzf。
+
+不想自动装工具时加 `-SkipTools` 跳过；装完**新开一个终端**让 winget 注入的 PATH 生效。
 
 > 符号链接需要开发者模式或管理员权限；未开启时脚本自动回退到复制模式。
+> 若仓库目录本身就是 `$PROFILE` 所在目录（本机直用仓库），脚本会跳过文件链接，只安装工具与模块。
 
-### 3. 安装 PowerShell 模块
+### 3. （可选）手动安装 PowerShell 模块
+
+上一步已自动完成，需要手动执行时：
 
 ```powershell
 Install-Module PSCompletions, PSFzf -Scope CurrentUser
 ```
 
-### 4. 安装命令行工具（winget）
+### 4. （可选）手动安装命令行工具（winget）
 
-一行装齐全部依赖：
+上一步已自动完成，需要手动执行时（一行装齐全部依赖）：
 
 ```powershell
 winget install --id Starship.Starship -e `
@@ -106,6 +139,7 @@ Remove-Item $env:LOCALAPPDATA\nvim\.git -Recurse -Force   # 改成自己的仓�
 | PSFzf | （`Install-Module`）| fzf 与 PSReadLine 集成 | - |
 
 > 所有工具均为可选。配置启动时一次性探测（`Get-Command` 批量调用），缺失的工具其别名/函数自动跳过或回退到内置命令，profile 不会因缺工具而报错。
+> `setup.ps1`（不加 `-SkipTools`）会自动安装上表全部工具与模块。
 
 ## 启动性能
 
@@ -128,7 +162,7 @@ $env:PROFILE_DEBUG = 1    # 开启耗时打印
 pwsh                      # 开新终端查看
 ```
 
-缓存文件位于 `$env:TEMP\{starship,zoxide,fnm}-init-cache.ps1`，工具升级后删除即可强制刷新。
+缓存文件位于 `$env:TEMP\{starship,zoxide,fnm}-init-cache.ps1`。缓存同时以「7 天 TTL」和「工具二进制更新时间」两个条件失效：**工具升级后下次启动自动重新生成，无需手动删除**。
 
 ## 常用别名与函数
 
@@ -136,7 +170,7 @@ pwsh                      # 开新终端查看
 
 | 命令 | 说明 |
 |---|---|
-| `ep` | 用 VS Code 编辑 profile |
+| `ep` | 用 VS Code 编辑 profile（未装 VS Code 时回退 `$EDITOR`） |
 
 ### 导航
 
@@ -146,6 +180,7 @@ pwsh                      # 开新终端查看
 | `mkcd <dir>` | 新建目录并进入 |
 
 > 注：PowerShell 原生支持 `cd ~`，无需额外别名。
+> eza 缺失时 `ls` 家族回退 `Get-ChildItem`，若装有 Terminal-Icons 模块则自动启用图标。
 
 ### 文件列表（基于 eza）
 
@@ -175,7 +210,7 @@ pwsh                      # 开新终端查看
 
 | 命令 | 说明 |
 |---|---|
-| `myip` | 查询公网 IP |
+| `myip` | 查询公网 IP（ifconfig.me / ipify / ipinfo 备用链） |
 | `portof <port>` | 查询占用端口的进程 |
 | `killport <port>` | 终止占用端口的进程 |
 | `ps-reboot [delay]` | 重启（不覆盖系统 `shutdown.exe`） |
@@ -196,8 +231,8 @@ pwsh                      # 开新终端查看
 | `touch <file>` | 新建文件 |
 | `which <cmd>` | 查命令路径（找不到时给出反馈） |
 | `unzip <file>` | 7z 解压（缺失时回退到 Expand-Archive） |
-| `ch` | 在当前目录打开 VS Code |
-| `wallpaper` | 下载并设置随机壁纸（见 `Scripts/wallpaper.ps1`） |
+| `ch` | 在当前目录打开 VS Code（未装 VS Code 时回退 `$EDITOR`） |
+| `wallpaper` | 下载并设置随机壁纸（`-n` 不超分 / `-c` 清理旧图 / `-s` 静默 / `-strict` 缺 waifu2x 时中止，默认降级用原图；见 `Scripts/wallpaper.ps1`） |
 
 ## 设计说明
 
@@ -205,4 +240,6 @@ pwsh                      # 开新终端查看
 - **避免覆盖系统命令**：`shutdown`/`reboot`/`hibernate`/`suspend` 改用 `ps-` 前缀，`find` 改用别名（`find.exe` 仍可显式调用）。
 - **未批准动词规避**：`Edit-Profile` 改为 `profile-edit`，避免 PowerShell 的未批准动词警告。
 - **`$LASTEXITCODE` 串联**：`gquick` 在 add/commit 失败时中止，不会盲目 push。
-- **缓存原子写入**：所有外部工具 init 缓存（starship/zoxide/fnm）都先写到 `.tmp` 再 Move，校验 `$LASTEXITCODE -eq 0` 且输出非空。
+- **缓存原子写入**：所有外部工具 init 缓存（starship/zoxide/fnm）统一由 `profile/init-cache.ps1` 处理，先写到 `.tmp` 再 Move，校验 `$LASTEXITCODE -eq 0` 且输出非空；缓存因 7 天 TTL 或工具升级自动失效。
+- **PATH 重建的取舍**：profile 启动时从注册表重建 PATH（避免继承父进程的陈旧 PATH），代价是丢弃父进程注入的 PATH（如 IDE 启动器、venv 激活后的入口）。需要保留时设置 `$env:PROFILE_KEEP_PARENT_PATH = 1`。
+- **`Modules/` 目录**：仓库内的 `Modules/` 是 pwsh 的默认用户模块目录（因为仓库本身就在 `$PROFILE` 目录下），由 `setup.ps1` / `Install-Module` 填充，已 gitignore，不纳入版本管理。

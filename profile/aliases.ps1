@@ -18,6 +18,11 @@ if ($global:__Tools.ContainsKey('eza')) {
     function lt  { eza --icons --tree --level=2 @args }
     function llt { eza --icons -l --tree --level=2 --git @args }
 } else {
+    # eza 缺失：回退 Get-ChildItem；若装了 Terminal-Icons 则启用图标（否则无图标输出）
+    # 临时压低 ErrorActionPreference，避免模块内部错误（如设置目录不可写）刷屏
+    $_eap = $ErrorActionPreference
+    $ErrorActionPreference = 'SilentlyContinue'
+    try { Import-Module Terminal-Icons -ErrorAction SilentlyContinue } finally { $ErrorActionPreference = $_eap }
     function ls  { Get-ChildItem @args }
     function ll  { Get-ChildItem @args }
     function la  { Get-ChildItem -Force @args }
@@ -28,8 +33,12 @@ if ($global:__Tools.ContainsKey('eza')) {
 # ==============================================================
 # Profile 管理
 # ==============================================================
-# 使用未批准动词会触发警告，故采用普通命名 + 别名
-function profile-edit   { code $PROFILE }
+# 使用未批准动词会触发警告，故采用普通命名 + 别名；code 缺失时回退 $EDITOR
+function profile-edit {
+    if (Get-Command code -ErrorAction SilentlyContinue) { code $PROFILE }
+    elseif ($env:EDITOR) { & $env:EDITOR $PROFILE }
+    else { Write-Host '未找到 code 且未设置 $EDITOR' -ForegroundColor Yellow }
+}
 Set-Alias -Name ep -Value profile-edit -Force
 
 # ==============================================================
@@ -106,7 +115,16 @@ function ps-suspend   { rundll32.exe powrprof.dll,SetSuspendState Sleep }
 function ps-lock      { rundll32.exe user32.dll,LockWorkStation }
 Set-Alias -Name lock -Value ps-lock
 
-function Get-PublicIP { (Invoke-RestMethod -Uri "https://ifconfig.me/ip" -TimeoutSec 5).Trim() }
+function Get-PublicIP {
+    # 备用 API 链：ifconfig.me 在大陆网络经常不可达，逐个尝试
+    $apis = @('https://ifconfig.me/ip', 'https://api.ipify.org', 'https://ipinfo.io/ip')
+    foreach ($u in $apis) {
+        try {
+            return (Invoke-RestMethod -Uri $u -TimeoutSec 5).Trim()
+        } catch { }
+    }
+    Write-Host '无法获取公网 IP（网络问题或所有 API 均不可达）' -ForegroundColor Yellow
+}
 Set-Alias -Name myip -Value Get-PublicIP
 
 function Get-PortProcess ($port) {
@@ -139,7 +157,11 @@ if ($global:__Tools.ContainsKey('7z')) {
 } else {
     function unzip ($file) { Expand-Archive -Path $file -DestinationPath . -Force }
 }
-function codehere { code . }
+function codehere {
+    if (Get-Command code -ErrorAction SilentlyContinue) { code . }
+    elseif ($env:EDITOR) { & $env:EDITOR . }
+    else { Write-Host '未找到 code 且未设置 $EDITOR' -ForegroundColor Yellow }
+}
 Set-Alias -Name ch -Value codehere
 
 # ==============================================================
