@@ -52,3 +52,22 @@ profile 中 PSFzf 用 `Ctrl+t` 触发文件补全，但 Windows Terminal 默认�
 
 - 想微调配色？PSReadLine 的前景色在 `profile/psreadline.ps1` 的 `-Colors` 中定义，
   与本文件 16 色保持同一 Solarized 色板即可。
+
+## 终端透明度（fzf 弹窗浮出效果）
+
+fzf 弹窗本身无法真正半透明（TUI 背景是 ANSI 实色，不支持 alpha 混合）。
+网上看到的"fzf 半透明浮窗"效果 = **终端整体半透明 + fzf 弹窗保持实色**，
+弹窗像浮在桌面上。在 `settings.json` 的 `profiles.defaults` 里任选一种：
+
+```jsonc
+// 方式一：透明度（推荐，简洁）
+"opacity": 92,          // 0-100 整数，越小越透明；配合 scheme 的背景色使用
+
+// 方式二：亚克力毛玻璃（Win10 1809+）
+"useAcrylic": true,
+"acrylicOpacity": 0.85
+```
+
+> 建议透明度不低于 85，否则文字可读性下降；fzf 弹窗（Tokyo Night 配色）始终为实色，
+> 与半透明终端形成清晰的明暗层次。`opacity` 需要 Windows Terminal 1.18+。
+
