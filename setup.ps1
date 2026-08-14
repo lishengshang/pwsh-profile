@@ -75,9 +75,12 @@ function Install-DepTools {
             continue
         }
         Write-Host "正在安装: $($tool.Name) ($($tool.Id)) ..." -ForegroundColor Cyan
-        winget install --id $tool.Id -e --silent --accept-package-agreements --accept-source-agreements | Out-Null
+        $output = winget install --id $tool.Id -e --silent --accept-package-agreements --accept-source-agreements 2>&1 | Out-String
         if ($LASTEXITCODE -ne 0) {
-            Write-Warning "安装失败: $($tool.Name)（exit $LASTEXITCODE），可稍后手动安装"
+            # 打印详细输出，便于定位失败原因（如源/网络问题）
+            $code = '0x{0:X8}' -f ([uint32]$LASTEXITCODE)
+            Write-Warning "安装失败: $($tool.Name)（exit $code）"
+            $output.Trim() -split "`n" | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkGray }
         }
     }
 }
