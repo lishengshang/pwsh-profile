@@ -11,12 +11,12 @@ function Show-StartupInfo {
     if ($env:PROFILE_NO_STARTUP) { return }
 
     # Nerd Font 图标
-    $iUser   = [char]0xF007   #   fa-user
-    $iWin    = [char]0xF17A   #   fa-windows
-    $iTerm   = [char]0xF62A   #   dev-terminal
-    $iCpu    = [char]0xF2DB   #   fa-microchip
-    $iKeys   = [char]0xF11C   #   fa-keyboard-o
-    $iBolt   = [char]0xF0E7   #   fa-bolt
+    $iUser = [char]0xF007   #   fa-user
+    $iWin  = [char]0xF17A   #   fa-windows
+    $iTerm = [char]0xF120   #   fa-terminal（PS 图标；不用 dev-terminal F62A，部分字体渲染异常）
+    $iCpu  = [char]0xF2DB   #   fa-microchip
+    $iKeys = [char]0xF11C   #   fa-keyboard-o
+    $iBolt = [char]0xF0E7   #   fa-bolt
 
     # Solarized 配色（24bit ANSI）
     $cBlue  = '38;2;38;139;210'
@@ -27,9 +27,14 @@ function Show-StartupInfo {
     $date = Get-Date -Format 'yyyy-MM-dd dddd'
     Write-Host "`e[${cBlue}m$iUser Hi $env:USERNAME · $date`e[0m"
 
-    # 系统信息：OS 名称（注册表 ~1ms）+ PS 版本 + CPU 核数
-    $os = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -Name ProductName -ErrorAction SilentlyContinue).ProductName
+    # 系统信息：OS 名称 + 版本（注册表 ~1ms，避免 WMI 慢调用）
+    # Win11 的 ProductName 常残留 "Windows 10 Pro"（升级/镜像），
+    # 用 CurrentBuildNumber >= 22000 判定，并附上 DisplayVersion（23H2/24H2 等）
+    $k = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion'
+    $os = $k.ProductName
     if (-not $os) { $os = 'Windows' }
+    if ([int]$k.CurrentBuildNumber -ge 22000) { $os = $os -replace 'Windows 10', 'Windows 11' }
+    if ($k.DisplayVersion) { $os = "$os $($k.DisplayVersion)" }
     $ver = $PSVersionTable.PSVersion.ToString()
     $cores = [Environment]::ProcessorCount
     Write-Host "`e[${cGray}m$iWin $os · $iTerm PS $ver · $iCpu $cores 核`e[0m"
