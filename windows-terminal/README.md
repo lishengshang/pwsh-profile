@@ -60,14 +60,18 @@ fzf 弹窗本身无法真正半透明（TUI 背景是 ANSI 实色，不支持 al
 弹窗像浮在桌面上。在 `settings.json` 的 `profiles.defaults` 里任选一种：
 
 ```jsonc
-// 方式一：透明度（推荐，简洁）
-"opacity": 92,          // 0-100 整数，越小越透明；配合 scheme 的背景色使用
+// 方式一：透明度（推荐，Win11 稳定；opacity 与 useAcrylic 互斥，二选一）
+"opacity": 90,          // 0-100 整数，越小越透明；配合 scheme 的背景色使用
 
-// 方式二：亚克力毛玻璃（Win10 1809+）
+// 方式二：亚克力毛玻璃（Win10 1809+ 效果好；Win11 22H2+ 上经常失效，
+// 微软已知问题，表现为纯色/无效果——失效时请用方式一）
 "useAcrylic": true,
 "acrylicOpacity": 0.85
 ```
 
 > 建议透明度不低于 85，否则文字可读性下降；fzf 弹窗（Tokyo Night 配色）始终为实色，
-> 与半透明终端形成清晰的明暗层次。`opacity` 需要 Windows Terminal 1.18+。
+> 与半透明终端形成清晰的明暗层次。`opacity` 需要 Windows Terminal 1.18+，
+> 检查版本：`wt --version`（商店版可在「设置 → 关于」查看）。
+> 改完若仍无效果，确认改的是商店版配置文件
+> `%LOCALAPPDATA%\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json`。
 
