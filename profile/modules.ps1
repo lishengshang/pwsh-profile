@@ -38,7 +38,4 @@ $null = Register-EngineEvent -SourceIdentifier PowerShell.OnIdle -Action {
             Set-PsFzfOption -PSReadlineChordProvider 'Ctrl+t' -PSReadlineChordReverseHistory 'Ctrl+r' -GitKeyBindings
         }
     }
-
-    # 启动画面（首个 prompt 渲染后显示一次；PROFILE_NO_BANNER=1 可关闭）
-    Show-Banner
 }

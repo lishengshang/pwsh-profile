@@ -170,7 +170,26 @@ else {
     Write-Host "`n依赖安装完成。请重新打开终端让 winget 注入的 PATH 生效。" -ForegroundColor Cyan
 }
 
-Write-Host "`n安装完成。请重新打开 PowerShell 或执行 `. `$PROFILE` 加载配置。" -ForegroundColor Cyan
+# ================= 完成横幅（点阵大字，安装完成时显示） =================
+$bannerFont = @{
+    P = @('#####','#   #','#   #','#####','#    ','#    ','#    ')
+    W = @('#   #','#   #','# # #','## ##','## ##','#   #','#   #')
+    S = @('#####','#    ','#    ','#### ','    #','    #','#####')
+    H = @('#   #','#   #','#   #','#####','#   #','#   #','#   #')
+}
+$bannerColors = @('38;2;38;139;210','38;2;42;161;152','38;2;133;153;0','38;2;181;137;0','38;2;203;75;22','38;2;220;50;47','38;2;108;113;196')
+$bannerRows = @('','','','','','','')
+foreach ($ch in 'PWSH'.ToCharArray()) {
+    $glyph = $bannerFont[[string]$ch]
+    if (-not $glyph) { continue }
+    for ($i = 0; $i -lt 7; $i++) { $bannerRows[$i] += $glyph[$i] + '  ' }
+}
+Write-Host ''
+for ($i = 0; $i -lt 7; $i++) {
+    Write-Host "`e[$($bannerColors[$i])m$($bannerRows[$i])`e[0m"
+}
+
+Write-Host "安装完成。请重新打开 PowerShell 或执行 `. `$PROFILE` 加载配置。" -ForegroundColor Cyan
 if (($repoDir -ine $profileDir) -and $needBackup) {
     Write-Host "原配置已备份到: $backupDir" -ForegroundColor Cyan
 }

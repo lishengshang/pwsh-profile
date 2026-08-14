@@ -11,11 +11,11 @@ if (-not $env:PROFILE_KEEP_PARENT_PATH) {
     $env:PATH = [Environment]::GetEnvironmentVariable('PATH','Machine') + ';' + [Environment]::GetEnvironmentVariable('PATH','User')
 }
 
-# 仅在 $env:PROFILE_DEBUG 非空时打印加载耗时
+# 仅在 $env:PROFILE_DEBUG 非空时打印各模块耗时
 $_debug = [bool]$env:PROFILE_DEBUG
 
-# 加载计时（仅 debug 模式下使用）
-if ($_debug) { $_total = [System.Diagnostics.Stopwatch]::StartNew() }
+# 启动计时（Stopwatch 开销可忽略；默认显示总耗时，PROFILE_NO_TIME=1 关闭）
+$_total = [System.Diagnostics.Stopwatch]::StartNew()
 
 # 批量探测工具是否存在。
 # 用 File.Exists 遍历 PATH（.exe/.cmd/.bat），比 Get-Command 快约 5 倍：
@@ -42,7 +42,6 @@ $modules = @(
     'prompt.ps1'
     'psreadline.ps1'
     'modules.ps1'
-    'banner.ps1'       # 启动画面（OnIdle 一次性显示，不阻塞启动）
     'aliases.ps1'
 )
 
@@ -61,4 +60,7 @@ foreach ($mod in $modules) {
 
 if ($_debug) {
     Write-Host "TOTAL: $($_total.ElapsedMilliseconds)ms" -ForegroundColor Green
+}
+elseif (-not $env:PROFILE_NO_TIME) {
+    Write-Host "Profile loaded in $($_total.ElapsedMilliseconds)ms" -ForegroundColor Cyan
 }
