@@ -78,7 +78,8 @@ function Install-DepTools {
         $output = winget install --id $tool.Id -e --silent --accept-package-agreements --accept-source-agreements 2>&1 | Out-String
         if ($LASTEXITCODE -ne 0) {
             # 打印详细输出，便于定位失败原因（如源/网络问题）
-            $code = '0x{0:X8}' -f ([uint32]$LASTEXITCODE)
+            # -band 0xFFFFFFFF 把负 exit code 转成无符号十六进制（[uint32] 不接受负数）
+            $code = '0x{0:X8}' -f ($LASTEXITCODE -band 0xFFFFFFFF)
             Write-Warning "安装失败: $($tool.Name)（exit $code）"
             $output.Trim() -split "`n" | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkGray }
         }
