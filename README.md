@@ -171,14 +171,16 @@ pwsh                      # 开新终端查看
 
 ## 启动行为
 
-新开终端时显示 4 行（均为毫秒级轻量读取，不拖慢启动）：
+新开终端时显示 4 行启动信息（带 Nerd Font 图标与 Solarized 配色，均为毫秒级轻量读取，不拖慢启动）：
 
 ```
-Hi lishe · 2026-08-14 周五
-Windows 11 Pro 23H2 · PS 7.6.4 · 8 核
-Ctrl+t 文件 · Ctrl+r 历史 · Ctrl+g git · gs 状态 · z 跳转 · .. 上级
-Profile loaded in 36ms
+ Hi lishe · 2026-08-14 星期五
+ Windows 10 Pro 23H2 ·  PS 7.6.4 ·  16 核
+ Ctrl+t 文件 · Ctrl+r 历史 · Ctrl+g git · gs 状态 · z 跳转 · .. 上级
+ Profile loaded in 36ms
 ```
+
+> 图标依赖 Nerd Font 字体（安装见 `windows-terminal/README.md`）；无 Nerd Font 的环境会显示为方块，但功能不受影响。
 
 - 关闭耗时行：`$env:PROFILE_NO_TIME = 1`
 - 关闭信息行（问候/系统信息/键位速查）：`$env:PROFILE_NO_STARTUP = 1`
