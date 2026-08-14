@@ -145,12 +145,16 @@ Remove-Item $env:LOCALAPPDATA\nvim\.git -Recurse -Force   # 改成自己的仓�
 
 | 场景 | 耗时 | 说明 |
 |---|---|---|
-| 冷启动 | ~300ms | 首次或缓存过期，需现场生成 starship/zoxide/fnm 缓存 |
-| 热启动 | ~120ms | 缓存命中（日常场景） |
+| 冷启动 | ~150ms | 无任何缓存，仅 fnm env 需现场生成 |
+| 热启动 | ~40ms | 缓存命中（日常场景） |
 
 优化点：
-- **fnm env 缓存化**：7 天 TTL，热启动免调用外部进程
-- **starship / zoxide 缓存**：7 天 TTL + 原子写入（先写 `.tmp` 再 Move，避免半写竞态）
+- **工具探测轻量化**：用 `File.Exists` 遍历 PATH（`.exe/.cmd/.bat`）替代 `Get-Command`，11 个名字约 37ms（`Get-Command` 对缺失名字做 PATH×PATHEXT 全展开约 190ms）
+- **PATH 重建前置**：入口先按注册表重建 PATH 再探测工具，避免父进程 PATH 不完整时探测不到已安装工具
+- **fnm env 缓存化**：7 天 TTL + 升级即失效 + 原子写入，热启动免调用外部进程
+- **starship 全懒加载**：缓存 `--print-full-init` 完整脚本（dot-source 零进程调用），且**缓存生成延迟到首次 prompt**
+- **zoxide 全懒加载**：init 生成与加载延迟到首次 `z`/`zi` 调用
+- **Terminal-Icons 按需加载**：仅在 eza 缺失且首次执行 `ls` 时加载（模块加载本身 ~100ms+）
 - **PSCompletions / PSFzf 懒加载**：通过 `PowerShell.OnIdle` 事件在首个 prompt 渲染后加载，不阻塞首屏
 - **PSReadLine 非交互保护**：stdout 被重定向时跳过配置，避免 VT 报错
 - **启动日志门控**：仅 `$env:PROFILE_DEBUG=1` 时打印各模块耗时，默认安静
@@ -162,7 +166,7 @@ $env:PROFILE_DEBUG = 1    # 开启耗时打印
 pwsh                      # 开新终端查看
 ```
 
-缓存文件位于 `$env:TEMP\{starship,zoxide,fnm}-init-cache.ps1`。缓存同时以「7 天 TTL」和「工具二进制更新时间」两个条件失效：**工具升级后下次启动自动重新生成，无需手动删除**。
+缓存文件位于 `$env:TEMP\{fnm,zoxide}-init-cache.ps1` 与 `$env:TEMP\starship-init-cache-v2.ps1`。缓存同时以「7 天 TTL」和「工具二进制更新时间」两个条件失效：**工具升级后下次启动自动重新生成，无需手动删除**。
 
 ## 常用别名与函数
 

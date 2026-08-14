@@ -1,12 +1,8 @@
 # ==============================================================
 # 环境初始化
 # ==============================================================
-# 从注册表重建 PATH，避免继承父进程的陈旧 PATH。
-# 取舍：会丢弃父进程注入的 PATH（如 IDE 启动器、venv 激活后的入口）。
-# 需要保留父进程 PATH 时设置 $env:PROFILE_KEEP_PARENT_PATH=1（见 README「设计说明」）。
-if (-not $env:PROFILE_KEEP_PARENT_PATH) {
-    $env:PATH = [Environment]::GetEnvironmentVariable('PATH','Machine') + ';' + [Environment]::GetEnvironmentVariable('PATH','User')
-}
+# 注：PATH 重建已提前到入口（Microsoft.PowerShell_profile.ps1）的
+# 工具探测之前执行，此处只处理 fnm 缓存与默认编辑器。
 
 # fnm (Node 版本管理) -- 缓存 7 天 + 升级即失效，原子写入
 if (Initialize-CachedInit -Command 'fnm' -CacheFile "$env:TEMP\fnm-init-cache.ps1" -Arguments @('env','--use-on-cd','--shell','powershell')) {

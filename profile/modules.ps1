@@ -1,10 +1,21 @@
 # ==============================================================
-# 模块加载（zoxide 同步缓存；PSCompletions / PSFzf 通过 OnIdle 懒加载）
+# 模块加载（zoxide 懒加载；PSCompletions / PSFzf 通过 OnIdle 懒加载）
 # ==============================================================
 
-# zoxide（缓存 7 天 + 升级即失效，原子写入）
-if (Initialize-CachedInit -Command 'zoxide' -CacheFile "$env:TEMP\zoxide-init-cache.ps1" -Arguments @('init','powershell')) {
-    . "$env:TEMP\zoxide-init-cache.ps1"
+# zoxide：缓存生成与加载延迟到首次 z/zi 调用（init 输出全部为 global: 函数 +
+# 全局别名，可安全按需 dot-source；首次调用有一次性的生成开销，之后命中缓存）
+if ($global:__Tools.ContainsKey('zoxide')) {
+    $script:__zoxideCache = "$env:TEMP\zoxide-init-cache.ps1"
+    $script:__zoxideReady = $false
+    function __Ensure-Zoxide {
+        if ($script:__zoxideReady) { return }
+        $script:__zoxideReady = $true
+        $null = Initialize-CachedInit -Command 'zoxide' -CacheFile $script:__zoxideCache -Arguments @('init','powershell')
+        if (Test-Path $script:__zoxideCache) { . $script:__zoxideCache }
+    }
+    # 占位函数：首次调用触发加载；zoxide init 会注册全局别名 z/zi（别名优先于函数）
+    function z  { __Ensure-Zoxide; z @args }
+    function zi { __Ensure-Zoxide; zi @args }
 }
 
 # 防止重复订阅（如手动 dot-source profile 时）

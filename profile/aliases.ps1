@@ -18,16 +18,22 @@ if ($global:__Tools.ContainsKey('eza')) {
     function lt  { eza --icons --tree --level=2 @args }
     function llt { eza --icons -l --tree --level=2 --git @args }
 } else {
-    # eza 缺失：回退 Get-ChildItem；若装了 Terminal-Icons 则启用图标（否则无图标输出）
-    # 临时压低 ErrorActionPreference，避免模块内部错误（如设置目录不可写）刷屏
-    $_eap = $ErrorActionPreference
-    $ErrorActionPreference = 'SilentlyContinue'
-    try { Import-Module Terminal-Icons -ErrorAction SilentlyContinue } finally { $ErrorActionPreference = $_eap }
-    function ls  { Get-ChildItem @args }
-    function ll  { Get-ChildItem @args }
-    function la  { Get-ChildItem -Force @args }
-    function lt  { Get-ChildItem -Recurse -Depth 1 @args }
-    function llt { Get-ChildItem -Recurse -Depth 1 @args }
+    # eza 缺失：回退 Get-ChildItem。Terminal-Icons 延迟到首次 ls 调用时才加载
+    # （该模块加载很重 ~100-400ms，不能进启动路径）；缺失或加载失败时静默降级为无图标
+    $script:__TerminalIconsLoaded = $false
+    function __Ensure-TerminalIcons {
+        if ($script:__TerminalIconsLoaded) { return }
+        $script:__TerminalIconsLoaded = $true
+        # 临时压低 ErrorActionPreference，避免模块内部错误（如设置目录不可写）刷屏
+        $_eap = $ErrorActionPreference
+        $ErrorActionPreference = 'SilentlyContinue'
+        try { Import-Module Terminal-Icons -ErrorAction SilentlyContinue } finally { $ErrorActionPreference = $_eap }
+    }
+    function ls  { __Ensure-TerminalIcons; Get-ChildItem @args }
+    function ll  { __Ensure-TerminalIcons; Get-ChildItem @args }
+    function la  { __Ensure-TerminalIcons; Get-ChildItem -Force @args }
+    function lt  { __Ensure-TerminalIcons; Get-ChildItem -Recurse -Depth 1 @args }
+    function llt { __Ensure-TerminalIcons; Get-ChildItem -Recurse -Depth 1 @args }
 }
 
 # ==============================================================
