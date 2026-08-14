@@ -16,6 +16,12 @@ if (Initialize-CachedInit -Command 'fnm' -CacheFile "$env:TEMP\fnm-init-cache.ps
     }
 }
 
+# fzf UI 美化（Solarized 配色 + 高度/反向/圆角边框/预览窗）
+# 用户已自行设置 FZF_DEFAULT_OPTS 时不覆盖；fzf 官方参数，PSFzf/命令行 fzf 均生效
+if (-not $env:FZF_DEFAULT_OPTS) {
+    $env:FZF_DEFAULT_OPTS = '--height=40% --layout=reverse --border=rounded --preview-window=right:50%:border-rounded --color=bg:#002B36,bg+:#073642,fg:#839496,fg+:#93A1A1,hl:#268BD2,hl+:#2AA198,pointer:#CB4B16,marker:#DC322F,header:#586E75,info:#586E75,prompt:#268BD2,spinner:#2AA198,border:#586E75,scrollbar:#586E75'
+}
+
 # 默认编辑器：让 git / npm edit / crontab 等所有遵循 EDITOR/VISUAL 的工具统一走 nvim
 if (-not $env:EDITOR -and $global:__Tools.ContainsKey('nvim')) {
     $env:EDITOR = 'nvim'

@@ -133,7 +133,7 @@ Remove-Item $env:LOCALAPPDATA\nvim\.git -Recurse -Force   # 改成自己的仓�
 | fd | `sharkdp.fd` | 文件查找（别名 `find`） | `find.exe` |
 | bat | `sharkdp.bat` | 查看文件（高亮） | `Get-Content` |
 | 7zip | `7zip.7zip` | 解压 | `Expand-Archive` |
-| fzf | `junegunn.fzf` | 模糊查找（Ctrl+t 文件 / Ctrl+r 历史 / Ctrl+g 前缀 git 和弦：+b 分支、+f 文件、+h 提交、+t tag） | - |
+| fzf | `junegunn.fzf` | 模糊查找（Ctrl+t 文件 / Ctrl+r 历史 / Ctrl+g 前缀 git 和弦：+b 分支、+f 文件、+h 提交、+t tag；Tab 补全 fzf-tab 式） | - |
 | fnm | `Schniz.fnm` | Node 版本管理 | - |
 | Neovim | `neovim.neovim` | 默认编辑器（`$EDITOR`/`$VISUAL`） | - |
 | PSCompletions | （`Install-Module`）| 命令补全（git/winget 等，OnIdle 懒加载） | - |
@@ -181,6 +181,12 @@ pwsh                      # 开新终端查看
 ```
 
 > 图标依赖 Nerd Font 字体（安装见 `windows-terminal/README.md`）；无 Nerd Font 的环境会显示为方块，但功能不受影响。
+
+## fzf 界面（Solarized）
+
+- **UI 美化**：通过 `FZF_DEFAULT_OPTS` 设置 Solarized 配色 + 40% 高度 + 反向布局 + 圆角边框 + 右侧预览窗（`profile/env.ps1`，已自行设置该变量时不会覆盖）
+- **fzf-tab 式 Tab 补全**：Tab 弹出 fzf 选择器（带右侧实时预览），类似 Linux zsh 的 fzf-tab；与 PSCompletions 的补全项兼容
+- 与 PSCompletions 菜单冲突时恢复默认 Tab：`$env:PROFILE_NO_FZF_TAB = 1`
 
 - 关闭耗时行：`$env:PROFILE_NO_TIME = 1`
 - 关闭信息行（问候/系统信息/键位速查）：`$env:PROFILE_NO_STARTUP = 1`
