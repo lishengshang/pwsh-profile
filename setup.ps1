@@ -29,9 +29,10 @@ $items = @(
     @{ Source = 'powershell.config.json'; Target = Join-Path $profileDir 'powershell.config.json' }
 )
 
-# 与 $PROFILE 无关的外部配置：即使仓库即 $PROFILE 目录（本机直用仓库）也照常链接
+# 与 $PROFILE 无关的外部配置：即使仓库即 $PROFILE 目录（本机直用仓库）也照常链接。
+# SkipIfExists：目标已存在时不动它（用户自己的配置优先），仅缺失时引入仓库默认。
 $extraItems = @(
-    @{ Source = 'starship.toml'; Target = Join-Path $HOME '.config\starship.toml' }
+    @{ Source = 'starship.toml'; Target = Join-Path $HOME '.config\starship.toml'; SkipIfExists = $true }
 )
 
 # winget 工具清单（与 README「依赖工具」表保持一致）
@@ -127,8 +128,8 @@ if (-not $useSymlink) {
 
 $linkItems = @($items) + @($extraItems)
 
-# 备份已存在的目标文件/目录
-$needBackup = $linkItems | Where-Object { Test-Path $_.Target }
+# 备份已存在的目标文件/目录（SkipIfExists 的条目不备份——它们不会被改动）
+$needBackup = $linkItems | Where-Object { -not $_.SkipIfExists -and (Test-Path $_.Target) }
 if ($needBackup) {
     New-Item -ItemType Directory -Path $backupDir -Force | Out-Null
     foreach ($item in $needBackup) {
@@ -146,6 +147,10 @@ foreach ($item in $linkItems) {
     }
 
     if (Test-Path $item.Target) {
+        if ($item.SkipIfExists) {
+            Write-Host "已存在，跳过: $($item.Target)" -ForegroundColor DarkGray
+            continue
+        }
         Remove-Item -Path $item.Target -Recurse -Force
     }
 
