@@ -29,6 +29,11 @@ $items = @(
     @{ Source = 'powershell.config.json'; Target = Join-Path $profileDir 'powershell.config.json' }
 )
 
+# 与 $PROFILE 无关的外部配置：即使仓库即 $PROFILE 目录（本机直用仓库）也照常链接
+$extraItems = @(
+    @{ Source = 'starship.toml'; Target = Join-Path $HOME '.config\starship.toml' }
+)
+
 # winget 工具清单（与 README「依赖工具」表保持一致）
 $wingetTools = @(
     @{ Name = 'Starship'; Id = 'Starship.Starship' }
@@ -107,56 +112,60 @@ function Install-PwshModules {
     }
 }
 
-# ================= 文件链接（仓库目录即配置目录时跳过） =================
+# ================= 文件链接 =================
+# $items 的目标在 $PROFILE 目录下，仓库目录即 $PROFILE 目录时跳过；
+# $extraItems 是 starship 等外部配置，任何情况下都链接。
 if ($repoDir -ieq $profileDir) {
-    Write-Host '检测到仓库目录就是 $PROFILE 所在目录（本机直用仓库），跳过文件链接。' -ForegroundColor DarkYellow
+    Write-Host '检测到仓库目录就是 $PROFILE 所在目录（本机直用仓库），跳过 $PROFILE 相关文件链接。' -ForegroundColor DarkYellow
+    $items = @()
 }
-else {
-    $useSymlink = Test-SymlinkAvailable
-    if (-not $useSymlink) {
-        Write-Warning '当前环境不支持创建符号链接（需管理员权限或开启开发者模式），将使用复制模式。'
+
+$useSymlink = Test-SymlinkAvailable
+if (-not $useSymlink) {
+    Write-Warning '当前环境不支持创建符号链接（需管理员权限或开启开发者模式），将使用复制模式。'
+}
+
+$linkItems = @($items) + @($extraItems)
+
+# 备份已存在的目标文件/目录
+$needBackup = $linkItems | Where-Object { Test-Path $_.Target }
+if ($needBackup) {
+    New-Item -ItemType Directory -Path $backupDir -Force | Out-Null
+    foreach ($item in $needBackup) {
+        $name = Split-Path $item.Target -Leaf
+        Move-Item -Path $item.Target -Destination (Join-Path $backupDir $name) -Force
+        Write-Host "已备份: $($item.Target) -> $backupDir\$name" -ForegroundColor DarkYellow
+    }
+}
+
+foreach ($item in $linkItems) {
+    $src = Join-Path $repoDir $item.Source
+    if (-not (Test-Path $src)) {
+        Write-Host "跳过（不存在）: $src" -ForegroundColor DarkGray
+        continue
     }
 
-    # 备份已存在的目标文件/目录
-    $needBackup = $items | Where-Object { Test-Path $_.Target }
-    if ($needBackup) {
-        New-Item -ItemType Directory -Path $backupDir -Force | Out-Null
-        foreach ($item in $needBackup) {
-            $name = Split-Path $item.Target -Leaf
-            Move-Item -Path $item.Target -Destination (Join-Path $backupDir $name) -Force
-            Write-Host "已备份: $($item.Target) -> $backupDir\$name" -ForegroundColor DarkYellow
-        }
+    if (Test-Path $item.Target) {
+        Remove-Item -Path $item.Target -Recurse -Force
     }
 
-    foreach ($item in $items) {
-        $src = Join-Path $repoDir $item.Source
-        if (-not (Test-Path $src)) {
-            Write-Host "跳过（不存在）: $src" -ForegroundColor DarkGray
-            continue
-        }
+    $parent = Split-Path $item.Target
+    if (-not (Test-Path $parent)) {
+        New-Item -ItemType Directory -Path $parent -Force | Out-Null
+    }
 
-        if (Test-Path $item.Target) {
-            Remove-Item -Path $item.Target -Recurse -Force
-        }
-
-        $parent = Split-Path $item.Target
-        if (-not (Test-Path $parent)) {
-            New-Item -ItemType Directory -Path $parent -Force | Out-Null
-        }
-
-        if ($useSymlink) {
-            $null = New-Item -ItemType SymbolicLink -Path $item.Target -Target $src -Force
-            Write-Host "已链接: $($item.Source) -> $($item.Target)" -ForegroundColor Green
+    if ($useSymlink) {
+        $null = New-Item -ItemType SymbolicLink -Path $item.Target -Target $src -Force
+        Write-Host "已链接: $($item.Source) -> $($item.Target)" -ForegroundColor Green
+    }
+    else {
+        if ((Get-Item $src).PSIsContainer) {
+            Copy-Item -Path $src -Destination $item.Target -Recurse -Force
         }
         else {
-            if ((Get-Item $src).PSIsContainer) {
-                Copy-Item -Path $src -Destination $item.Target -Recurse -Force
-            }
-            else {
-                Copy-Item -Path $src -Destination $item.Target -Force
-            }
-            Write-Host "已复制: $($item.Source) -> $($item.Target)" -ForegroundColor Green
+            Copy-Item -Path $src -Destination $item.Target -Force
         }
+        Write-Host "已复制: $($item.Source) -> $($item.Target)" -ForegroundColor Green
     }
 }
 
@@ -190,6 +199,6 @@ for ($i = 0; $i -lt 7; $i++) {
 }
 
 Write-Host "安装完成。请重新打开 PowerShell 或执行 `. `$PROFILE` 加载配置。" -ForegroundColor Cyan
-if (($repoDir -ine $profileDir) -and $needBackup) {
+if ($needBackup) {
     Write-Host "原配置已备份到: $backupDir" -ForegroundColor Cyan
 }

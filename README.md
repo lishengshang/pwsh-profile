@@ -20,6 +20,7 @@ PowerShell/
 ├── Scripts/
 │   └── wallpaper.ps1      # 壁纸自动下载脚本
 ├── windows-terminal/      # Windows Terminal 主题（Solarized Dark + 使用说明）
+├── starship.toml          # starship 提示符主题（链接到 ~/.config/starship.toml）
 ├── setup.ps1              # 一键安装脚本（符号链接/复制 + 自动备份 + 工具/模块安装）
 ├── bootstrap.ps1          # 全新机器引导脚本（PS 5.1 可跑：装 pwsh/git + 克隆 + setup）
 └── powershell.config.json
@@ -76,13 +77,13 @@ cd ~/repos/pwsh-profile
 
 脚本会：
 
-1. 把 `Microsoft.PowerShell_profile.ps1` / `profile/` / `Scripts/` / `powershell.config.json` 链接（或复制）到 `$PROFILE` 所在目录，并自动备份原配置到 `backup-<时间戳>` 子目录；
+1. 把 `Microsoft.PowerShell_profile.ps1` / `profile/` / `Scripts/` / `powershell.config.json` 链接（或复制）到 `$PROFILE` 所在目录，把 `starship.toml` 链接到 `~/.config/starship.toml`，并自动备份原配置到 `backup-<时间戳>` 子目录；
 2. **自动安装全部依赖**：用 winget 装齐 10 个命令行工具（见下方表格），用 `Install-Module` 装 PSCompletions / PSFzf。
 
 不想自动装工具时加 `-SkipTools` 跳过；装完**新开一个终端**让 winget 注入的 PATH 生效。
 
 > 符号链接需要开发者模式或管理员权限；未开启时脚本自动回退到复制模式。
-> 若仓库目录本身就是 `$PROFILE` 所在目录（本机直用仓库），脚本会跳过文件链接，只安装工具与模块。
+> 若仓库目录本身就是 `$PROFILE` 所在目录（本机直用仓库），脚本会跳过 `$PROFILE` 相关文件链接，但仍会把 `starship.toml` 等外部配置链接到位，并安装工具与模块。
 
 ### 3. （可选）手动安装 PowerShell 模块
 

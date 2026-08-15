@@ -9,6 +9,9 @@ Modules/
 # PSReadLine 历史记录
 ConsoleHost_history.txt
 
+# setup.ps1 自动备份目录（本机直用仓库时备份会落在仓库内）
+backup-*/
+
 # 临时 / 缓存文件
 *.log
 *.tmp
