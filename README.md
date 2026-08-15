@@ -31,13 +31,14 @@ PowerShell/
 
 **方式一：一行引导（推荐，全新 Windows 机器）**
 
-在系统自带的 Windows PowerShell 5.1（开始菜单搜 `powershell`）里执行：
+在 PowerShell 7 或系统自带的 Windows PowerShell 5.1 窗口里直接执行（已装 pwsh 的用户跑它也不会报错，bootstrap 会自动跳过已装项继续）：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/lishengshang/pwsh-profile/main/bootstrap.ps1 | iex"
+Set-ExecutionPolicy -Scope Process Bypass -Force; irm https://raw.githubusercontent.com/lishengshang/pwsh-profile/main/bootstrap.ps1 | Out-File "$env:TEMP\pwsh-profile-bootstrap.ps1" -Encoding utf8; & "$env:TEMP\pwsh-profile-bootstrap.ps1"
 ```
 
 > 这是从远程执行脚本，请确认来源可信后再运行。`bootstrap.ps1` 会自动完成：装 PowerShell 7 → 装 Git → 克隆本仓库到 `$HOME\Documents\PowerShell`（pwsh 的 `$PROFILE` 目录，profile 直接生效）→ 自动安装全部依赖工具与模块。
+> 新版写法在当前窗口直接执行，不再拉起新的 powershell.exe 进程；若在旧版写法（`powershell -Command "irm ... | iex"`）下遇到 `ResourceUnavailable` 报错或杀软报毒，见文末「常见问题」。
 
 **方式二：标准安装（已有 pwsh / 想装到其他目录）**
 
@@ -105,7 +106,7 @@ winget install --id Starship.Starship -e `
   && winget install --id 7zip.7zip -e `
   && winget install --id junegunn.fzf -e `
   && winget install --id Schniz.fnm -e `
-  && winget install --id neovim.neovim -e
+  && winget install --id Neovim.Neovim -e
 ```
 
 > PowerShell 中 `&&` 需 PS7+。装完后**新开一个终端**让 winget 注入的 PATH 生效。
@@ -135,7 +136,7 @@ Remove-Item $env:LOCALAPPDATA\nvim\.git -Recurse -Force   # 改成自己的仓�
 | 7zip | `7zip.7zip` | 解压 | `Expand-Archive` |
 | fzf | `junegunn.fzf` | 模糊查找（Ctrl+t 文件 / Ctrl+r 历史 / Ctrl+g 前缀 git 和弦：+b 分支、+f 文件、+h 提交、+t tag；Tab 补全 fzf-tab 式） | - |
 | fnm | `Schniz.fnm` | Node 版本管理 | - |
-| Neovim | `neovim.neovim` | 默认编辑器（`$EDITOR`/`$VISUAL`） | - |
+| Neovim | `Neovim.Neovim` | 默认编辑器（`$EDITOR`/`$VISUAL`） | - |
 | PSCompletions | （`Install-Module`）| 命令补全（git/winget 等，OnIdle 懒加载） | - |
 | PSFzf | （`Install-Module`）| fzf 与 PSReadLine 集成 | - |
 
@@ -276,3 +277,22 @@ pwsh                      # 开新终端查看
 - **缓存原子写入**：所有外部工具 init 缓存（starship/zoxide/fnm）统一由 `profile/init-cache.ps1` 处理，先写到 `.tmp` 再 Move，校验 `$LASTEXITCODE -eq 0` 且输出非空；缓存因 7 天 TTL 或工具升级自动失效。
 - **PATH 重建的取舍**：profile 启动时从注册表重建 PATH（避免继承父进程的陈旧 PATH），代价是丢弃父进程注入的 PATH（如 IDE 启动器、venv 激活后的入口）。需要保留时设置 `$env:PROFILE_KEEP_PARENT_PATH = 1`。
 - **`Modules/` 目录**：仓库内的 `Modules/` 是 pwsh 的默认用户模块目录（因为仓库本身就在 `$PROFILE` 目录下），由 `setup.ps1` / `Install-Module` 填充，已 gitignore，不纳入版本管理。
+
+## 常见问题
+
+### 一行命令报 `ResourceUnavailable: Program 'powershell.exe' failed to run: ...` 或被杀软报毒？
+
+**原因**：旧版一行命令是 `powershell -ExecutionPolicy Bypass -Command "irm ... | iex"`——以「绕过执行策略 + 下载远程脚本并直接执行」的方式再拉起一个 powershell.exe 进程。这正是无文件恶意软件的经典特征，Defender / 360 / 火绒等安全软件会在进程创建层拦截，表现为 `ResourceUnavailable` 报错（错误信息可能随杀软不同而不同，如 "The Process object must have the UseShellExecute property set to false..." 或 "拒绝访问"）或报毒弹窗。这是安全软件的正常行为，**机器没有中毒，被拦截前没有执行任何代码**。
+
+**解决**：改用新版一行命令（当前窗口直接执行，不再拉起新进程）；或先下载、人工确认后再本地执行：
+
+```powershell
+irm https://raw.githubusercontent.com/lishengshang/pwsh-profile/main/bootstrap.ps1 -OutFile "$env:TEMP\bootstrap.ps1"
+powershell -ExecutionPolicy Bypass -File "$env:TEMP\bootstrap.ps1"
+```
+
+如果仓库已经在本机，直接 `.\bootstrap.ps1` 即可，完全绕开远程执行。若杀软已隔离文件，从隔离区恢复 `bootstrap.ps1` 即可。
+
+### 已经装了 pwsh，还需要跑方式一吗？
+
+不需要。方式一只面向全新机器；已装 pwsh 的用户直接 `git clone` + `.\setup.ps1`（方式二），或在 `$PROFILE` 目录克隆直用（方式三）。误跑方式一也不会报错：bootstrap 检测到 pwsh 已存在会跳过安装，并直接用当前实例继续执行 setup。

@@ -40,7 +40,7 @@ $wingetTools = @(
     @{ Name = '7-Zip';    Id = '7zip.7zip' }
     @{ Name = 'fzf';      Id = 'junegunn.fzf' }
     @{ Name = 'fnm';      Id = 'Schniz.fnm' }
-    @{ Name = 'Neovim';   Id = 'neovim.neovim' }
+    @{ Name = 'Neovim';   Id = 'Neovim.Neovim' }
 )
 
 function Test-SymlinkAvailable {

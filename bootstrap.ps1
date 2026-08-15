@@ -64,9 +64,15 @@ else {
 $setup = Join-Path $RepoDir 'setup.ps1'
 if (-not (Test-Path $setup)) { throw "未找到 $setup" }
 
-$pwshPath = (Get-Command pwsh -ErrorAction SilentlyContinue).Source
-if (-not $pwshPath) {
-    $pwshPath = Join-Path $env:ProgramFiles 'PowerShell\7\pwsh.exe'
+# 已运行在 pwsh 中时直接复用当前实例（不依赖 PATH，兼容"用户已装 pwsh"的场景）
+if ($PSVersionTable.PSVersion.Major -ge 7) {
+    $pwshPath = Join-Path $PSHOME 'pwsh.exe'
+}
+else {
+    $pwshPath = (Get-Command pwsh -ErrorAction SilentlyContinue).Source
+    if (-not $pwshPath) {
+        $pwshPath = Join-Path $env:ProgramFiles 'PowerShell\7\pwsh.exe'
+    }
 }
 if (-not (Test-Path $pwshPath)) {
     Write-Warning "找不到 pwsh（$pwshPath）。请重新打开终端后再运行: .\setup.ps1"
