@@ -23,21 +23,22 @@ Windows Terminal 配色方案，外加字体与键位建议（面向 `eza --icon
    ```jsonc
    {
        "colorScheme": "Solarized Dark",
-       "font": { "face": "CaskaydiaCove NF", "size": 11 }
+       "font": { "face": "JetBrainsMono Nerd Font Mono", "size": 11 }
    }
    ```
 
 ## 字体
 
-`eza --icons` 的文件图标需要 Nerd Font 才能正确显示（自带的 Cascadia Code 没有图标字形）：
+`eza --icons` 的文件图标需要 Nerd Font 才能正确显示（自带的 Cascadia Code 没有图标字形）。
+本配置建议 **JetBrainsMono Nerd Font Mono**（等宽 Nerd 字体，`eza --icons` / starship / fzf 的图标均能正确渲染）：
 
 ```powershell
-winget install -e --id nerd-fonts.CaskaydiaCove --source winget
+winget install -e --id nerd-fonts.JetBrainsMono --source winget
 ```
 
-装完后在 WT 设置里把字体换成 `CaskaydiaCove NF` 并重开终端。
-若该 ID 在你的 winget 源里搜不到，用 `winget search CaskaydiaCove` 或到
-[Nerd Fonts 官网](https://www.nerdfonts.com/font-downloads) 下载。
+装完后在 WT 设置里把字体换成 `JetBrainsMono Nerd Font Mono`，并**重开终端**让字体缓存生效。
+若该 ID 在你的 winget 源里搜不到，用 `winget search JetBrainsMono` 或到
+[Nerd Fonts 官网](https://www.nerdfonts.com/font-downloads) 下载后手动安装。
 
 ## 注意：Ctrl+t 键位冲突
 
