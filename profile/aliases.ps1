@@ -155,6 +155,18 @@ function wup {
     winget upgrade --all @args
 }
 
+# 一键更新 PSGallery 模块（与 wup 对应；模块升级后需新开终端生效，
+# 旧会话残留的 $PSCompletions 等全局变量会让新版本模块跳过初始化）
+function wum {
+    foreach ($_m in 'PSCompletions','PSFzf','Terminal-Icons','BurntToast') {
+        if (Get-Module -ListAvailable -Name $_m) {
+            Write-Host "更新: $_m" -ForegroundColor Cyan
+            Update-Module -Name $_m -Scope CurrentUser -Force
+        }
+    }
+    Write-Host '模块更新完成，请新开终端生效。' -ForegroundColor Cyan
+}
+
 function Get-PortProcess ($port) {
     $conns = Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue
     if (-not $conns) { Write-Host "端口 $port 未被占用" -ForegroundColor Green; return }

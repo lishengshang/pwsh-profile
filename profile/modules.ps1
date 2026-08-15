@@ -18,17 +18,27 @@ if ($global:__Tools.ContainsKey('zoxide')) {
     function zi { __Ensure-Zoxide; zi @args }
 }
 
+# psc 兜底：正常情况下模块已由下方同步导入（别名 psc 生效），本函数不参与。
+# 仅在模块未加载时给出提示——注意不得在此嵌套调用 Import-Module
+# （官方文档明确禁止，嵌套调用会导致模块无法生效），正确做法是新开终端。
+function psc {
+    Write-Host 'PSCompletions 模块未加载：请新开终端（profile 会同步导入）或运行 .\setup.ps1' -ForegroundColor Yellow
+}
+
 # 防止重复订阅（如手动 dot-source profile 时）
 Unregister-Event -SourceIdentifier PowerShell.OnIdle -ErrorAction SilentlyContinue
 
-# OnIdle 懒加载（不用 -SupportEvent，避免阻止 exit）
-# Action 在主 runspace 同步执行，首个 prompt 后触发一次
+# PSCompletions（命令补全）：全局作用域同步加载。
+# 官方文档明确要求：不得在函数/脚本块/事件动作中嵌套调用 Import-Module
+# （否则模块无法正常生效：别名缺失、$PSCompletions 不完整、会话锁死），
+# 必须始终在 $PROFILE 顶层直接导入。因此无法 OnIdle 懒加载，
+# 冷启动 +~200ms 为官方设计约束的代价（见 PSCompletions 文档与 #155/#143）。
+Import-Module PSCompletions -ErrorAction SilentlyContinue
+
+# PSFzf 懒加载（OnIdle）
 $null = Register-EngineEvent -SourceIdentifier PowerShell.OnIdle -Action {
     # 仅执行一次
     Unregister-Event -SourceIdentifier PowerShell.OnIdle -ErrorAction SilentlyContinue
-
-    # PSCompletions（命令补全，首个 prompt 后加载）
-    Import-Module PSCompletions -ErrorAction SilentlyContinue
 
     # PSFzf（Ctrl+t 查文件，Ctrl+r 搜历史；-GitKeyBindings: Ctrl+g, Ctrl+b/f/h/p/s/t
     # 分别对应 git 分支/文件/提交哈希/PR/stash/tag 的 fzf 选择）
