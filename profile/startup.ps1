@@ -1,4 +1,4 @@
-# ==============================================================
+﻿# ==============================================================
 # 启动信息（问候 + 系统信息 + 键位速查 + 耗时）
 # 显示在 "Profile loaded in ..." 耗时行之前，由入口在模块加载后调用。
 # 全部使用注册表/内置变量等轻量读取（毫秒级），刻意不引入 WMI/CIM
@@ -18,14 +18,15 @@ function Show-StartupInfo {
     $iKeys = [char]0xF11C   #   fa-keyboard-o
     $iBolt = [char]0xF0E7   #   fa-bolt
 
-    # Solarized 配色（24bit ANSI）
+    # Solarized 配色（24bit ANSI）；$esc 用 [char]27 而非 `e（后者是 PS7 专属转义）
+    $esc   = [char]27
     $cBlue  = '38;2;38;139;210'
     $cGray  = '38;2;101;123;131'
     $cGreen = '38;2;133;153;0'
 
     # 问候：用户名 + 日期（dddd 在中文区域显示中文星期）
     $date = Get-Date -Format 'yyyy-MM-dd dddd'
-    Write-Host "`e[${cBlue}m$iUser Hi $env:USERNAME · $date`e[0m"
+    Write-Host "$esc[${cBlue}m$iUser Hi $env:USERNAME · $date$esc[0m"
 
     # 系统信息：OS 名称 + 版本（注册表 ~1ms，避免 WMI 慢调用）
     # Win11 的 ProductName 常残留 "Windows 10 Pro"（升级/镜像），
@@ -37,12 +38,12 @@ function Show-StartupInfo {
     if ($k.DisplayVersion) { $os = "$os $($k.DisplayVersion)" }
     $ver = $PSVersionTable.PSVersion.ToString()
     $cores = [Environment]::ProcessorCount
-    Write-Host "`e[${cGray}m$iWin $os · $iTerm PS $ver · $iCpu $cores 核`e[0m"
+    Write-Host "$esc[${cGray}m$iWin $os · $iTerm PS $ver · $iCpu $cores 核$esc[0m"
 
     # 键位速查（fzf 未安装时省略 fzf 相关键位）
     $keys = 'gs 状态 · z 跳转 · .. 上级'
     if ($global:__Tools.ContainsKey('fzf')) {
         $keys = 'Ctrl+t 文件 · Ctrl+r 历史 · Ctrl+g git · ' + $keys
     }
-    Write-Host "`e[${cGray}m$iKeys $keys`e[0m"
+    Write-Host "$esc[${cGray}m$iKeys $keys$esc[0m"
 }

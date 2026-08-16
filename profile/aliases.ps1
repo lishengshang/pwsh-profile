@@ -1,4 +1,4 @@
-# ==============================================================
+﻿# ==============================================================
 # 导航
 # ==============================================================
 function ..   { Set-Location .. }
@@ -205,7 +205,8 @@ function Get-PortProcess ($port) {
     if (-not $conns) { Write-Host "端口 $port 未被占用" -ForegroundColor Green; return }
     $conns | Sort-Object OwningProcess -Unique | ForEach-Object {
         $proc = Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue
-        [PSCustomObject]@{ Port = $port; PID = $_.OwningProcess; Process = $proc?.Name }
+        $pname = if ($proc) { $proc.Name }
+        [PSCustomObject]@{ Port = $port; PID = $_.OwningProcess; Process = $pname }
     }
 }
 Set-Alias -Name portof -Value Get-PortProcess
@@ -215,7 +216,8 @@ function Stop-Port ($port) {
     if (-not $conns) { Write-Host "端口 $port 未被占用" -ForegroundColor Green; return }
     $conns.OwningProcess | Sort-Object -Unique | ForEach-Object {
         $proc = Get-Process -Id $_ -ErrorAction SilentlyContinue
-        Write-Host "终止: $($proc?.Name) (PID $_)" -ForegroundColor Yellow
+        $pname = if ($proc) { $proc.Name }
+        Write-Host "终止: $pname (PID $_)" -ForegroundColor Yellow
         Stop-Process -Id $_ -Force
     }
 }

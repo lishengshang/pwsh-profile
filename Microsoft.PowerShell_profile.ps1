@@ -1,6 +1,15 @@
-# ==============================================================
+﻿# ==============================================================
 # PowerShell Profile - 模块化入口
 # ==============================================================
+# 版本守卫：此配置仅支持 PowerShell 7+。Windows PowerShell 5.1 的角色只是
+# 运行 bootstrap.ps1 引导安装 pwsh 7；误加载时给出引导后直接退出，
+# 避免子模块的 PS7 语法（?. 等）产生满屏解析错误。
+if ($PSVersionTable.PSVersion.Major -lt 7) {
+    Write-Host "此 PowerShell 配置需要 PowerShell 7+（当前 $($PSVersionTable.PSVersion)）。" -ForegroundColor Yellow
+    Write-Host 'Windows PowerShell 5.1 仅用于引导：在仓库目录执行 .\bootstrap.ps1 安装 pwsh 7。' -ForegroundColor Yellow
+    return
+}
+
 # 全局变量：profile 根目录，供子模块引用
 $global:__ProfileDir = Split-Path $PROFILE
 

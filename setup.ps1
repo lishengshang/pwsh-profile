@@ -1,4 +1,4 @@
-#Requires -Version 7
+﻿#Requires -Version 7
 <#
 .SYNOPSIS
     安装 PowerShell profile 到当前用户的 PowerShell 配置目录。
@@ -259,9 +259,11 @@ foreach ($ch in 'PWSH'.ToCharArray()) {
     if (-not $glyph) { continue }
     for ($i = 0; $i -lt 7; $i++) { $bannerRows[$i] += $glyph[$i] + '  ' }
 }
+# 横幅 ANSI 转义用 [char]27 而非 `e（后者是 PS7 专属转义）
+$esc = [char]27
 Write-Host ''
 for ($i = 0; $i -lt 7; $i++) {
-    Write-Host "`e[$($bannerColors[$i])m$($bannerRows[$i])`e[0m"
+    Write-Host "$esc[$($bannerColors[$i])m$($bannerRows[$i])$esc[0m"
 }
 
 Write-Host "安装完成。请重新打开 PowerShell 或执行 `. `$PROFILE` 加载配置。" -ForegroundColor Cyan

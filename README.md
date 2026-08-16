@@ -181,6 +181,12 @@ PSCompletions 用全局变量 `$PSCompletions` + 固定 guid 判断是否已初�
 
 一般规律：**任何模块升级后都建议新开终端**（`wum` 更新完也会提示）。
 
+### 支持 Windows PowerShell 5.1 吗？
+
+不支持，且不需要手动做任何事来"隔离"：5.1 的 profile 目录是 `Documents\WindowsPowerShell\`，本仓库部署在 `Documents\PowerShell\`（PS7 专属），5.1 天然加载不到。5.1 的正确角色只有一个——**引导**：在仓库目录执行 `.\bootstrap.ps1`，它会装好 pwsh 7 并完成全部配置。
+
+万一误把此配置链接给了 5.1（如手动复制 profile 文件），入口的版本守卫会提示"需要 PowerShell 7+"并直接退出，不会出现满屏解析错误。
+
 ## 参考与致谢
 
 本配置站在以下开源项目的肩膀上（官方文档入口）：
