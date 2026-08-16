@@ -63,6 +63,18 @@ function profile-edit {
 }
 Set-Alias -Name ep -Value profile-edit -Force
 
+# 多设备同步：拉取本 profile 仓库的最新配置（重开终端生效；nvim 插件重开 nvim 自动对齐）
+function psync {
+    if (-not (Test-Path (Join-Path $global:__ProfileDir '.git'))) {
+        Write-Host "当前 profile 目录不是 git 仓库（$($global:__ProfileDir)），请到本机仓库克隆目录手动 git pull。" -ForegroundColor Yellow
+        return
+    }
+    git -C $global:__ProfileDir pull --rebase @args
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host '配置已同步。重开终端生效；nvim 配置有变时重开 nvim 自动安装插件。' -ForegroundColor Cyan
+    }
+}
+
 # ==============================================================
 # Linux 移植（优先使用现代替代工具）
 # ==============================================================
@@ -133,6 +145,11 @@ function glog {
 }
 
 function gup { git pull --rebase @args }
+
+# lazygit 终端 UI（LazyVim 内 <leader>gg 调起的也是它）
+if ($global:__Tools.ContainsKey('lazygit')) {
+    function lg { lazygit @args }
+}
 
 # 清理已合并到当前分支的本地分支（保护 main/master/dev/develop 与当前分支）
 function gclean {

@@ -18,9 +18,15 @@ profile/startup.ps1                启动信息
 setup.ps1                          一键安装（符号链接 + winget 工具 + Install-Module）
 bootstrap.ps1                      全新系统引导（装 pwsh/git → 克隆 → setup）
 starship.toml                      提示符主题（SkipIfExists 链接到 ~/.config/）
+lazygit/config.yml                 lazygit 主题 Solarized Dark（链接到 %APPDATA%\lazygit\）
+nvim/                              LazyVim 配置（链接到 $env:LOCALAPPDATA\nvim）
 Scripts/                           独立脚本（如 wallpaper.ps1）
 windows-terminal/                  终端配色与说明
 ```
+
+**nvim/ 约定**：只入库配置声明（lua/、lazyvim.json、lazy-lock.yml）；插件本体、
+Mason LSP、treesitter 产物在各设备 `$env:LOCALAPPDATA\nvim-data` 自动重建，不碰它们。
+改插件/键位 = 改 `nvim/` 内文件并提交，其他设备 `psync` 后重开 nvim 对齐。
 
 ## 硬性约定（改代码时必须遵守）
 

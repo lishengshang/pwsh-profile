@@ -44,11 +44,7 @@ git clone https://github.com/lishengshang/pwsh-profile.git $HOME\Documents\Power
    ```
    然后在 Windows Terminal 设置里把字体换成 `JetBrainsMono Nerd Font Mono`，重开终端生效。
 2. **Windows Terminal 主题**（Solarized Dark 配色 + 半透明）：按 [`windows-terminal/README.md`](windows-terminal/README.md) 把配色加进 settings.json。
-3. **（可选）LazyVim**：
-   ```powershell
-   git clone https://github.com/LazyVim/starter $env:LOCALAPPDATA\nvim
-   ```
-   官方文档：<https://www.lazyvim.org/>。
+3. **LazyVim 已自动化**：`setup.ps1` 会把 LazyVim starter 引入仓库 `nvim/` 并链接到 `$env:LOCALAPPDATA\nvim`——**首次打开 nvim 时自动安装全部插件**（需要几分钟）。官方文档：<https://www.lazyvim.org/>。
 
 装完**新开一个终端**让 winget 注入的 PATH 生效。
 
@@ -62,6 +58,8 @@ git clone https://github.com/lishengshang/pwsh-profile.git $HOME\Documents\Power
 | `..` / `...` / `....` | 向上跳 1/2/3 级目录 |
 | `mkcd <dir>` | 新建目录并进入 |
 | `y` | yazi 文件管理器（退出时 cd 到最后浏览的目录） |
+| `lg` | lazygit 终端 git UI（LazyVim 内 `<leader>gg` 调起浮窗） |
+| `psync` | 拉取本仓库最新配置（多设备同步；重开终端/nvim 生效） |
 | `cat` / `grep` / `find` | bat / ripgrep / fd（缺失时依次回退内置命令；`find.exe` 仍可显式调用） |
 | `touch <file>` / `which <cmd>` / `unzip <file>` | 新建文件 / 查命令路径 / 7z 解压 |
 
@@ -109,8 +107,20 @@ profile/modules.ps1                zoxide 懒加载；PSCompletions 同步加载
 profile/aliases.ps1                全部别名与函数（即上方速查表）
 profile/startup.ps1                启动信息（问候 / 系统信息）
 starship.toml                      提示符主题（链接到 ~/.config/starship.toml）
+lazygit/config.yml                 lazygit 主题 Solarized Dark（链接到 %APPDATA%\lazygit\）
+nvim/                              LazyVim 配置（链接到 $env:LOCALAPPDATA\nvim）
 powershell.config.json             执行策略 RemoteSigned
 ```
+
+### 多设备同步
+
+仓库管理的三份外部配置（starship / lazygit / LazyVim）决定了「改一处、全设备一致」：
+
+- **加 Neovim 插件**：在 `nvim/lua/plugins/` 新建一个 `.lua` 文件 → commit/push → 其他设备 `psync` 后重开 nvim，lazy.nvim 自动安装。
+- **改键位/选项/主题**：改 `nvim/lua/config/`、`lazyvim.json`（extras）、`lazygit/config.yml` → commit/push → `psync`。
+- **插件版本对齐**：`nvim/lazy-lock.yml` 随仓库提交，各设备按锁定版本自动补装。
+- **每设备本地生成、不入库**：插件本体（`nvim-data/lazy/`）、Mason 的 LSP 服务器、treesitter 编译产物——首次打开 nvim 时按仓库声明自动重建。
+
 
 环境变量开关：`PROFILE_NO_TIME`（关闭耗时行）、`PROFILE_NO_STARTUP`（关闭启动信息）、`PROFILE_NO_FZF_TAB`（恢复默认 Tab 补全）、`PROFILE_DEBUG`（打印各模块耗时）、`PROFILE_KEEP_PARENT_PATH`（保留父进程 PATH）。
 
@@ -135,6 +145,8 @@ powershell.config.json             执行策略 RemoteSigned
 | jq | `jqlang.jq` | yazi JSON 预览 | - |
 | poppler | `oschwartz10612.Poppler` | yazi PDF 预览 | - |
 | ImageMagick | `ImageMagick.ImageMagick` | yazi 字体/HEIC/JPEG XL 预览 | - |
+| lazygit | `JesseDuffield.lazygit` | 终端 git UI（`lg`，LazyVim `<leader>gg`） | - |
+| WinLibs gcc | `BrechtSanders.WinLibs.POSIX.UCRT` | LazyVim treesitter 解析器编译 | - |
 | PSCompletions | （`Install-Module`）| 命令补全（git/winget 等，同步加载） | - |
 | PSFzf | （`Install-Module`）| fzf 与 PSReadLine 集成 | - |
 | Terminal-Icons | （`Install-Module`）| eza 缺失时 `ls` 图标兜底 | - |

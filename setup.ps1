@@ -33,6 +33,8 @@ $items = @(
 # SkipIfExists：目标已存在时不动它（用户自己的配置优先），仅缺失时引入仓库默认。
 $extraItems = @(
     @{ Source = 'starship.toml'; Target = Join-Path $HOME '.config\starship.toml'; SkipIfExists = $true }
+    @{ Source = 'lazygit\config.yml'; Target = Join-Path $env:APPDATA 'lazygit\config.yml'; SkipIfExists = $true }
+    @{ Source = 'nvim'; Target = Join-Path $env:LOCALAPPDATA 'nvim'; SkipIfExists = $true }
 )
 
 # winget 工具清单（与 README「依赖工具」表保持一致）
@@ -53,6 +55,9 @@ $wingetTools = @(
     @{ Name = 'jq';           Id = 'jqlang.jq' }
     @{ Name = 'poppler';      Id = 'oschwartz10612.Poppler' }
     @{ Name = 'ImageMagick';  Id = 'ImageMagick.ImageMagick' }
+    # lazygit（终端 git UI）与 LazyVim 的 treesitter 编译器
+    @{ Name = 'lazygit';   Id = 'JesseDuffield.lazygit' }
+    @{ Name = 'WinLibs gcc'; Id = 'BrechtSanders.WinLibs.POSIX.UCRT' }
 )
 
 function Test-SymlinkAvailable {
@@ -98,6 +103,33 @@ function Install-DepTools {
     }
 }
 
+# LazyVim 配置入库：仓库 nvim/ 不存在时引入官方 starter（去掉其 .git，
+# 作为普通目录随本仓库提交；插件本体在每设备 $LOCALAPPDATA\nvim-data 自动安装）
+function Initialize-LazyVim {
+    $nvimDir = Join-Path $repoDir 'nvim'
+    if (Test-Path $nvimDir) {
+        Write-Host '已存在: nvim/（LazyVim 配置）' -ForegroundColor DarkGray
+        return
+    }
+    if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+        Write-Warning '未找到 git，跳过 LazyVim starter 引入。'
+        return
+    }
+    Write-Host '正在引入 LazyVim starter 到 nvim/ ...' -ForegroundColor Cyan
+    git clone --depth 1 https://github.com/LazyVim/starter $nvimDir 2>&1 | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warning 'LazyVim starter 克隆失败（网络问题？）。可稍后手动: git clone https://github.com/LazyVim/starter nvim'
+        return
+    }
+    Remove-Item -Path (Join-Path $nvimDir '.git') -Recurse -Force
+    # starter 默认忽略 lazy-lock.yml；多设备插件版本一致必须跟踪它
+    $gi = Join-Path $nvimDir '.gitignore'
+    if (Test-Path $gi) {
+        (Get-Content $gi) | Where-Object { $_ -notmatch 'lazy-lock' } | Set-Content $gi
+    }
+    Write-Host '已引入: nvim/（LazyVim starter）' -ForegroundColor Green
+}
+
 function Install-PwshModules {
     # NuGet provider 缺失时自动装（否则 Install-Module 会交互式询问）
     if (-not (Get-PackageProvider -Name NuGet -ErrorAction SilentlyContinue)) {
@@ -129,8 +161,11 @@ if ($repoDir -ieq $profileDir) {
 
 $useSymlink = Test-SymlinkAvailable
 if (-not $useSymlink) {
-    Write-Warning '当前环境不支持创建符号链接（需管理员权限或开启开发者模式），将使用复制模式。'
+    Write-Warning '当前环境不支持符号链接（需管理员权限或开发者模式），目录将回退 Junction、文件回退 HardLink，仍失败才复制。'
 }
+
+# 链接必须在 Initialize-LazyVim 之后建立（nvim/ 目录要先存在）
+Initialize-LazyVim
 
 $linkItems = @($items) + @($extraItems)
 
@@ -170,6 +205,26 @@ foreach ($item in $linkItems) {
         Write-Host "已链接: $($item.Source) -> $($item.Target)" -ForegroundColor Green
     }
     else {
+        # 无符号链接权限时的回退：目录用 Junction、文件用 HardLink（均无需特权，
+        # 且和符号链接一样「仓库即实体」，保证改仓库文件即刻生效、不产生两份副本）
+        $isDir = (Get-Item $src).PSIsContainer
+        $linked = $false
+        if ($isDir) {
+            try {
+                $null = New-Item -ItemType Junction -Path $item.Target -Target $src -ErrorAction Stop
+                $linked = $true
+            } catch { }
+        }
+        else {
+            try {
+                $null = New-Item -ItemType HardLink -Path $item.Target -Target $src -ErrorAction Stop
+                $linked = $true
+            } catch { }
+        }
+        if ($linked) {
+            Write-Host "已链接($($(if ($isDir) {'junction'} else {'hardlink'}))): $($item.Source) -> $($item.Target)" -ForegroundColor Green
+            continue
+        }
         if ((Get-Item $src).PSIsContainer) {
             Copy-Item -Path $src -Destination $item.Target -Recurse -Force
         }

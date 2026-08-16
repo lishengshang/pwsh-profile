@@ -1,0 +1,26 @@
+# lazygit 配置（链接到 %APPDATA%\lazygit\config.yml，SkipIfExists）
+# 主题锁死 Solarized Dark，与 windows-terminal 配色一致；
+# 换终端主题时改这里 → commit → 其他设备 psync 同步。
+gui:
+  theme:
+    activeBorderColor:
+      - "#b58900"
+      - bold
+    inactiveBorderColor:
+      - "#586e75"
+    searchingActiveBorderColor:
+      - "#cb4b16"
+    optionsTextColor:
+      - "#93a1a1"
+    selectedLineBgColor:
+      - "#073642"
+    selectedRangeBgColor:
+      - "#073642"
+    cherryPickedCommitBgColor:
+      - "#586e75"
+    cherryPickedCommitFgColor:
+      - "#eee8d5"
+    unstagedChangesColor:
+      - "#dc322f"
+    defaultFgColor:
+      - "#839496"
