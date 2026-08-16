@@ -21,7 +21,7 @@ starship.toml                      提示符主题（SkipIfExists 链接到 ~/.c
 lazygit/config.yml                 lazygit 主题 Solarized Dark（链接到 %APPDATA%\lazygit\）
 yazi/theme.toml                    yazi 主题（链接到 %APPDATA%\yazi\config\，flavor 每设备装不入库）
 nvim/                              LazyVim 配置（链接到 $env:LOCALAPPDATA\nvim）
-Scripts/                           独立脚本（如 wallpaper.ps1）
+Scripts/                           独立脚本（wallpaper.ps1、Get-ConfigLinks.ps1、Repair-ConfigLinks.ps1）
 windows-terminal/                  终端配色与说明
 ```
 
@@ -41,6 +41,11 @@ Mason LSP、treesitter 产物在各设备 `$env:LOCALAPPDATA\nvim-data` 自动�
    - 若 profile 需要探测：入口文件的工具名循环
 
    新增命令别名/函数时同步更新 `README.md` 使用速查表。
+   外部配置链接（starship/lazygit/yazi/nvim）的清单单源维护在
+   `Scripts/Get-ConfigLinks.ps1`，setup 与修复脚本都引用它，改链接只改这一处。
+   注意：git pull 和编辑器原子保存会弄断文件类硬链接，`psync`/`setup.ps1`
+   结束时会自动调用 `Scripts/Repair-ConfigLinks.ps1` 修复——改动涉及被链接的
+   配置文件后，无需手动处理链接。
 3. **优雅降级**：所有外部工具都是可选依赖。引用前用
    `$global:__Tools.ContainsKey('<name>')` 判断，缺失时回退内置命令或静默跳过，
    profile 不得因缺工具报错。

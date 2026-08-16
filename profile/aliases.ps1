@@ -71,6 +71,9 @@ function psync {
     }
     git -C $global:__ProfileDir pull --rebase @args
     if ($LASTEXITCODE -eq 0) {
+        # git 的原子写入会替换仓库文件 inode、弄断文件类硬链接，拉取后自动修复
+        $repair = Join-Path $global:__ProfileDir 'Scripts\Repair-ConfigLinks.ps1'
+        if (Test-Path $repair) { & $repair }
         Write-Host '配置已同步。重开终端生效；nvim 配置有变时重开 nvim 自动安装插件。' -ForegroundColor Cyan
     }
 }

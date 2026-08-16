@@ -29,14 +29,10 @@ $items = @(
     @{ Source = 'powershell.config.json'; Target = Join-Path $profileDir 'powershell.config.json' }
 )
 
-# 与 $PROFILE 无关的外部配置：即使仓库即 $PROFILE 目录（本机直用仓库）也照常链接。
+# 与 $PROFILE 无关的外部配置（清单单源维护在 Scripts/Get-ConfigLinks.ps1）：
+# 即使仓库即 $PROFILE 目录（本机直用仓库）也照常链接。
 # SkipIfExists：目标已存在时不动它（用户自己的配置优先），仅缺失时引入仓库默认。
-$extraItems = @(
-    @{ Source = 'starship.toml'; Target = Join-Path $HOME '.config\starship.toml'; SkipIfExists = $true }
-    @{ Source = 'lazygit\config.yml'; Target = Join-Path $env:APPDATA 'lazygit\config.yml'; SkipIfExists = $true }
-    @{ Source = 'yazi\theme.toml'; Target = Join-Path $env:APPDATA 'yazi\config\theme.toml'; SkipIfExists = $true }
-    @{ Source = 'nvim'; Target = Join-Path $env:LOCALAPPDATA 'nvim'; SkipIfExists = $true }
-)
+$extraItems = . (Join-Path $repoDir 'Scripts\Get-ConfigLinks.ps1')
 
 # winget 工具清单（与 README「依赖工具」表保持一致）
 $wingetTools = @(
@@ -60,6 +56,17 @@ $wingetTools = @(
     @{ Name = 'lazygit';   Id = 'JesseDuffield.lazygit' }
     @{ Name = 'WinLibs gcc'; Id = 'BrechtSanders.WinLibs.POSIX.UCRT' }
 )
+
+# 登记本机由 setup 创建过的文件类链接目标（Repair-ConfigLinks.ps1 的修复依据；
+# 机器本地状态，不入库）。git pull / 编辑器原子保存会替换仓库文件 inode 弄断
+# 硬链接，登记过的目标可自动重链；未登记（用户自有配置）永远不碰。
+function Add-LinkRegistry ([string]$target) {
+    $registry = Join-Path $env:LOCALAPPDATA 'pwsh-profile\linked-targets.txt'
+    $dir = Split-Path $registry
+    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+    $existing = if (Test-Path $registry) { Get-Content $registry } else { @() }
+    if ($existing -notcontains $target) { Add-Content -Path $registry -Value $target }
+}
 
 function Test-SymlinkAvailable {
     $tmp = [System.IO.Path]::GetTempFileName()
@@ -223,6 +230,7 @@ foreach ($item in $linkItems) {
     if ($useSymlink) {
         $null = New-Item -ItemType SymbolicLink -Path $item.Target -Target $src -Force
         Write-Host "已链接: $($item.Source) -> $($item.Target)" -ForegroundColor Green
+        if (-not (Get-Item $src).PSIsContainer) { Add-LinkRegistry $item.Target }
     }
     else {
         # 无符号链接权限时的回退：目录用 Junction、文件用 HardLink（均无需特权，
@@ -243,6 +251,7 @@ foreach ($item in $linkItems) {
         }
         if ($linked) {
             Write-Host "已链接($($(if ($isDir) {'junction'} else {'hardlink'}))): $($item.Source) -> $($item.Target)" -ForegroundColor Green
+            if (-not $isDir) { Add-LinkRegistry $item.Target }
             continue
         }
         if ((Get-Item $src).PSIsContainer) {
@@ -250,10 +259,14 @@ foreach ($item in $linkItems) {
         }
         else {
             Copy-Item -Path $src -Destination $item.Target -Force
+            Add-LinkRegistry $item.Target
         }
         Write-Host "已复制: $($item.Source) -> $($item.Target)" -ForegroundColor Green
     }
 }
+
+# 修复历史断链（幂等；对已完好的链接无操作）
+& (Join-Path $repoDir 'Scripts\Repair-ConfigLinks.ps1')
 
 # ================= 工具 / 模块安装 =================
 if ($SkipTools) {

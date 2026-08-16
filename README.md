@@ -121,6 +121,7 @@ powershell.config.json             执行策略 RemoteSigned
 - **改键位/选项/主题**：改 `nvim/lua/config/`、`lazyvim.json`（extras）、`lazygit/config.yml` → commit/push → `psync`。
 - **插件版本对齐**：`nvim/lazy-lock.yml` 随仓库提交，各设备按锁定版本自动补装。
 - **每设备本地生成、不入库**：插件本体（`nvim-data/lazy/`）、Mason 的 LSP 服务器、treesitter 编译产物——首次打开 nvim 时按仓库声明自动重建。
+- **链接自愈**：git 的原子写入会弄断文件类硬链接，`psync` 拉取后会自动重链（`Scripts/Repair-ConfigLinks.ps1`）；只修复 setup 创建过的链接，你自己的存量配置（如原有 starship.toml）不会被碰。
 - **输入法自动切换**（`nvim/lua/plugins/ime.lua`，smart-ime.nvim）：进插入模式自动切中文、退出切英文；若你改过系统的中/英切换键，同步改文件里的 `switch_key`。
 
 
