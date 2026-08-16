@@ -40,7 +40,7 @@ git clone https://github.com/lishengshang/pwsh-profile.git $HOME\Documents\Power
 
 1. **Nerd Font 字体**（提示符 / 文件列表图标需要）：
    ```powershell
-   winget install -e --id nerd-fonts.JetBrainsMono --source winget
+   winget install -e --id DEVCOM.JetBrainsMonoNerdFont --source winget
    ```
    然后在 Windows Terminal 设置里把字体换成 `JetBrainsMono Nerd Font Mono`，重开终端生效。
 2. **Windows Terminal 主题**（Solarized Dark 配色 + 半透明）：按 [`windows-terminal/README.md`](windows-terminal/README.md) 把配色加进 settings.json。
@@ -61,6 +61,7 @@ git clone https://github.com/lishengshang/pwsh-profile.git $HOME\Documents\Power
 | `ls` / `ll` / `la` / `lt` / `llt` | eza 图标列表 / 长格式+git / 长格式+隐藏+git / 树形 / 长格式+树形+git（eza 缺失时回退 `Get-ChildItem`） |
 | `..` / `...` / `....` | 向上跳 1/2/3 级目录 |
 | `mkcd <dir>` | 新建目录并进入 |
+| `y` | yazi 文件管理器（退出时 cd 到最后浏览的目录） |
 | `cat` / `grep` / `find` | bat / ripgrep / fd（缺失时依次回退内置命令；`find.exe` 仍可显式调用） |
 | `touch <file>` / `which <cmd>` / `unzip <file>` | 新建文件 / 查命令路径 / 7z 解压 |
 
@@ -129,8 +130,14 @@ powershell.config.json             执行策略 RemoteSigned
 | fzf | `junegunn.fzf` | 模糊查找（Ctrl+t 文件 / Ctrl+r 历史 / Ctrl+g git） | - |
 | fnm | `Schniz.fnm` | Node 版本管理 | - |
 | Neovim | `Neovim.Neovim` | 默认编辑器（`$EDITOR`/`$VISUAL`） | - |
+| yazi | `sxyazi.yazi` | 终端文件管理器（`y`，退出时 cd 到浏览目录） | - |
+| ffmpeg | `Gyan.FFmpeg` | yazi 视频缩略图 | - |
+| jq | `jqlang.jq` | yazi JSON 预览 | - |
+| poppler | `oschwartz10612.Poppler` | yazi PDF 预览 | - |
+| ImageMagick | `ImageMagick.ImageMagick` | yazi 字体/HEIC/JPEG XL 预览 | - |
 | PSCompletions | （`Install-Module`）| 命令补全（git/winget 等，同步加载） | - |
 | PSFzf | （`Install-Module`）| fzf 与 PSReadLine 集成 | - |
+| Terminal-Icons | （`Install-Module`）| eza 缺失时 `ls` 图标兜底 | - |
 
 > 所有工具均为可选：启动时用 `File.Exists` 遍历 PATH 一次性探测，缺失的工具其别名/函数自动跳过或回退，profile 不会因缺工具而报错。`setup.ps1`（不加 `-SkipTools`）自动安装上表全部工具与模块。
 > 更新：命令行工具用 `wup`（winget），PowerShell 模块用 `wum`（`Update-Module`），**更新模块后需新开终端生效**。

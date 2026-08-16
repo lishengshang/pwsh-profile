@@ -47,6 +47,12 @@ $wingetTools = @(
     @{ Name = 'fzf';      Id = 'junegunn.fzf' }
     @{ Name = 'fnm';      Id = 'Schniz.fnm' }
     @{ Name = 'Neovim';   Id = 'Neovim.Neovim' }
+    # Yazi 及其预览依赖
+    @{ Name = 'Yazi';         Id = 'sxyazi.yazi' }
+    @{ Name = 'ffmpeg';       Id = 'Gyan.FFmpeg' }
+    @{ Name = 'jq';           Id = 'jqlang.jq' }
+    @{ Name = 'poppler';      Id = 'oschwartz10612.Poppler' }
+    @{ Name = 'ImageMagick';  Id = 'ImageMagick.ImageMagick' }
 )
 
 function Test-SymlinkAvailable {
@@ -98,9 +104,9 @@ function Install-PwshModules {
         Install-PackageProvider -Name NuGet -Force -Scope CurrentUser | Out-Null
     }
 
-    $need = 'PSCompletions', 'PSFzf' | Where-Object { -not (Get-Module -ListAvailable -Name $_) }
+    $need = 'PSCompletions', 'PSFzf', 'Terminal-Icons' | Where-Object { -not (Get-Module -ListAvailable -Name $_) }
     if (-not $need) {
-        Write-Host '已安装: PSCompletions / PSFzf' -ForegroundColor DarkGray
+        Write-Host '已安装: PSCompletions / PSFzf / Terminal-Icons' -ForegroundColor DarkGray
         return
     }
     try {

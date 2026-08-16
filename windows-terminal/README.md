@@ -33,7 +33,7 @@ Windows Terminal 配色方案，外加字体与键位建议（面向 `eza --icon
 本配置建议 **JetBrainsMono Nerd Font Mono**（等宽 Nerd 字体，`eza --icons` / starship / fzf 的图标均能正确渲染）：
 
 ```powershell
-winget install -e --id nerd-fonts.JetBrainsMono --source winget
+winget install -e --id DEVCOM.JetBrainsMonoNerdFont --source winget
 ```
 
 装完后在 WT 设置里把字体换成 `JetBrainsMono Nerd Font Mono`，并**重开终端**让字体缓存生效。

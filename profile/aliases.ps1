@@ -7,6 +7,22 @@ function .... { Set-Location ../../.. }
 # 注：PowerShell 原生支持 `cd ~`，故不再定义 ~ 函数（函数名 ~ 永远不会被解析）
 function mkcd ($dir) { New-Item -ItemType Directory -Path $dir -Force | Out-Null; Set-Location $dir }
 
+# yazi 文件管理器：退出时 cd 到最后浏览的目录（官方 PowerShell 集成写法）
+if ($global:__Tools.ContainsKey('yazi')) {
+    function y {
+        $tmp = [System.IO.Path]::GetTempFileName()
+        try {
+            yazi $args --cwd-file="$tmp"
+            $cwd = Get-Content -Path $tmp -ErrorAction SilentlyContinue
+            if (-not [String]::IsNullOrEmpty($cwd) -and $cwd -ne $PWD.Path) {
+                Set-Location -LiteralPath ([System.IO.Path]::GetFullPath($cwd))
+            }
+        } finally {
+            Remove-Item -Path $tmp -ErrorAction SilentlyContinue
+        }
+    }
+}
+
 # ==============================================================
 # ls 变体（基于 eza）
 # ==============================================================
@@ -158,7 +174,7 @@ function wup {
 # 一键更新 PSGallery 模块（与 wup 对应；模块升级后需新开终端生效，
 # 旧会话残留的 $PSCompletions 等全局变量会让新版本模块跳过初始化）
 function wum {
-    foreach ($_m in 'PSCompletions','PSFzf','Terminal-Icons','BurntToast') {
+    foreach ($_m in 'PSCompletions','PSFzf','Terminal-Icons') {
         if (Get-Module -ListAvailable -Name $_m) {
             Write-Host "更新: $_m" -ForegroundColor Cyan
             Update-Module -Name $_m -Scope CurrentUser -Force

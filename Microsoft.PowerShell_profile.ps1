@@ -23,7 +23,7 @@ $_total = [System.Diagnostics.Stopwatch]::StartNew()
 # 这里 ~37ms。工具一律为外部可执行文件，无需 Get-Command 的命令发现语义。
 $global:__Tools = @{}
 $_dirs = $env:PATH -split ';' | Where-Object { $_ }
-foreach ($_name in 'eza','rg','grep','fd','bat','7z','fnm','nvim','zoxide','fzf','starship') {
+foreach ($_name in 'eza','rg','grep','fd','bat','7z','fnm','nvim','zoxide','fzf','starship','yazi','jq') {
     foreach ($_d in $_dirs) {
         foreach ($_e in '.exe','.cmd','.bat') {
             if ([System.IO.File]::Exists("$_d\$_name$_e")) {
