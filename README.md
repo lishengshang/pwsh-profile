@@ -189,6 +189,10 @@ PSCompletions 用全局变量 `$PSCompletions` + 固定 guid 判断是否已初�
 
 万一误把此配置链接给了 5.1（如手动复制 profile 文件），入口的版本守卫会提示"需要 PowerShell 7+"并直接退出，不会出现满屏解析错误。
 
+### yazi 提示 `Cannot find 'file' to detect the file's MIME type`？
+
+yazi 依赖 GNU `file` 做 MIME 检测。profile 启动时会自动探测 Git for Windows 自带的 `file.exe` 并设置 `YAZI_FILE_ONE` 环境变量指向它（官方推荐做法；Git 的 `usr\bin` 不在 PATH 里，所以 Git Bash 外看不到这个命令）。确认：新开终端执行 `echo $env:YAZI_FILE_ONE` 应输出 Git 目录下的 `usr\bin\file.exe` 路径。若 Git 装在非常规位置且探测不到，手动设置该变量即可。
+
 ## 参考与致谢
 
 本配置站在以下开源项目的肩膀上（官方文档入口）：

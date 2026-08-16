@@ -29,3 +29,19 @@ if (-not $env:EDITOR -and $global:__Tools.ContainsKey('nvim')) {
     $env:EDITOR = 'nvim'
     $env:VISUAL = 'nvim'
 }
+
+# yazi 的 MIME 检测依赖 GNU file；官方推荐用 Git for Windows 自带的 file.exe
+# （scoop/choco 的独立构建有 Unicode 文件名问题，不采用）。动态探测 Git 安装
+# 位置（系统级/用户级安装路径不同），找到后设置 YAZI_FILE_ONE 指向完整路径
+# ——MSYS DLL 与 exe 同目录，yazi 直接调起即可，无需 Git Bash 环境。
+if (-not $env:YAZI_FILE_ONE -and $global:__Tools.ContainsKey('yazi')) {
+    foreach ($_git in @(
+        (Get-Command git -ErrorAction SilentlyContinue).Source
+        "$env:ProgramFiles\Git\cmd\git.exe"
+        "$env:LOCALAPPDATA\Programs\Git\cmd\git.exe"
+    )) {
+        if (-not $_git) { continue }
+        $_fileOne = Join-Path (Split-Path (Split-Path $_git)) 'usr\bin\file.exe'
+        if (Test-Path $_fileOne) { $env:YAZI_FILE_ONE = $_fileOne; break }
+    }
+}
