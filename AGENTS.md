@@ -19,6 +19,7 @@ setup.ps1                          一键安装（符号链接 + winget 工具 +
 bootstrap.ps1                      全新系统引导（装 pwsh/git → 克隆 → setup）
 starship.toml                      提示符主题（SkipIfExists 链接到 ~/.config/）
 lazygit/config.yml                 lazygit 主题 Solarized Dark（链接到 %APPDATA%\lazygit\）
+yazi/theme.toml                    yazi 主题（链接到 %APPDATA%\yazi\config\，flavor 每设备装不入库）
 nvim/                              LazyVim 配置（链接到 $env:LOCALAPPDATA\nvim）
 Scripts/                           独立脚本（如 wallpaper.ps1）
 windows-terminal/                  终端配色与说明

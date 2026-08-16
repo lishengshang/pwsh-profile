@@ -108,6 +108,7 @@ profile/aliases.ps1                全部别名与函数（即上方速查表）
 profile/startup.ps1                启动信息（问候 / 系统信息）
 starship.toml                      提示符主题（链接到 ~/.config/starship.toml）
 lazygit/config.yml                 lazygit 主题 Solarized Dark（链接到 %APPDATA%\lazygit\）
+yazi/theme.toml                    yazi 主题（链接到 %APPDATA%\yazi\config\，flavor 由 setup 安装）
 nvim/                              LazyVim 配置（链接到 $env:LOCALAPPDATA\nvim）
 powershell.config.json             执行策略 RemoteSigned
 ```

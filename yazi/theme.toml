@@ -1,0 +1,6 @@
+# yazi 主题（链接到 %APPDATA%\yazi\config\theme.toml）
+# Solarized Dark 社区 flavor，与终端 / starship / lazygit 配色统一。
+# flavor 本体由 setup.ps1 执行 `ya pkg add peterfication/solarized` 安装；
+# 若官方日后发布 Solarized flavor（yazi-rs/flavors#7），改下面的名字即可切换。
+[flavor]
+dark = "solarized"

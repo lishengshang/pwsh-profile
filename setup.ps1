@@ -34,6 +34,7 @@ $items = @(
 $extraItems = @(
     @{ Source = 'starship.toml'; Target = Join-Path $HOME '.config\starship.toml'; SkipIfExists = $true }
     @{ Source = 'lazygit\config.yml'; Target = Join-Path $env:APPDATA 'lazygit\config.yml'; SkipIfExists = $true }
+    @{ Source = 'yazi\theme.toml'; Target = Join-Path $env:APPDATA 'yazi\config\theme.toml'; SkipIfExists = $true }
     @{ Source = 'nvim'; Target = Join-Path $env:LOCALAPPDATA 'nvim'; SkipIfExists = $true }
 )
 
@@ -128,6 +129,25 @@ function Initialize-LazyVim {
         (Get-Content $gi) | Where-Object { $_ -notmatch 'lazy-lock' } | Set-Content $gi
     }
     Write-Host '已引入: nvim/（LazyVim starter）' -ForegroundColor Green
+}
+
+# yazi 主题 flavor（theme.toml 引用的 solarized；每设备安装，不入库）
+function Install-YaziFlavor {
+    if (-not (Test-Path (Join-Path $repoDir 'yazi\theme.toml'))) { return }
+    # winget 刚装完 yazi 时当前进程 PATH 里还没有 ya，从注册表重建
+    $env:PATH = [Environment]::GetEnvironmentVariable('PATH','Machine') + ';' + [Environment]::GetEnvironmentVariable('PATH','User')
+    if (-not (Get-Command ya -ErrorAction SilentlyContinue)) {
+        Write-Warning '未找到 ya（yazi CLI），跳过 Solarized flavor 安装，可稍后手动: ya pkg add peterfication/solarized'
+        return
+    }
+    $flavorDir = Join-Path $env:APPDATA 'yazi\config\flavors'
+    if ((Test-Path $flavorDir) -and (Get-ChildItem $flavorDir -Filter '*solarized*' -ErrorAction SilentlyContinue)) {
+        Write-Host '已安装: yazi flavor (solarized)' -ForegroundColor DarkGray
+        return
+    }
+    Write-Host '正在安装 yazi Solarized flavor ...' -ForegroundColor Cyan
+    $output = ya pkg add peterfication/solarized 2>&1 | Out-String
+    Write-Host $output.TrimEnd() -ForegroundColor DarkGray
 }
 
 function Install-PwshModules {
@@ -241,6 +261,7 @@ if ($SkipTools) {
 }
 else {
     Install-DepTools
+    Install-YaziFlavor
     Install-PwshModules
     Write-Host "`n依赖安装完成。请重新打开终端让 winget 注入的 PATH 生效。" -ForegroundColor Cyan
 }
