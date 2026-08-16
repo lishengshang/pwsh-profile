@@ -1,0 +1,65 @@
+# AGENTS.md — 多 Agent 开发约定
+
+本仓库是 PowerShell 7+ 的模块化 profile（dotfiles 类项目），由多个 agent 会话
+（ZCode / Codex / Claude Code / Trae / DeepSeek harness 等混用）并行开发。
+任何 agent 在动手前必须读完本文件。本文件是项目约定的唯一事实来源。
+
+## 项目结构
+
+```
+Microsoft.PowerShell_profile.ps1   入口：重建 PATH → File.Exists 探测工具 → 按序加载 profile/*.ps1
+profile/init-cache.ps1             工具 init 缓存（必须最先加载）
+profile/env.ps1                    fnm 缓存、EDITOR/VISUAL、fzf 配色
+profile/prompt.ps1                 starship 提示符（懒加载）
+profile/psreadline.ps1             PSReadLine 配置
+profile/modules.ps1                zoxide 懒加载；PSCompletions / PSFzf
+profile/aliases.ps1                全部别名与函数
+profile/startup.ps1                启动信息
+setup.ps1                          一键安装（符号链接 + winget 工具 + Install-Module）
+bootstrap.ps1                      全新系统引导（装 pwsh/git → 克隆 → setup）
+starship.toml                      提示符主题（SkipIfExists 链接到 ~/.config/）
+Scripts/                           独立脚本（如 wallpaper.ps1）
+windows-terminal/                  终端配色与说明
+```
+
+## 硬性约定（改代码时必须遵守）
+
+1. **启动性能红线**：profile 启动必须保持在几百毫秒内。禁止在启动路径同步
+   `Import-Module` 重量级模块——参照现有做法：懒加载（`modules.ps1`）、延迟到首次调用
+   （`aliases.ps1` 的 `__Ensure-TerminalIcons`）、缓存（`init-cache.ps1`）。新工具探测
+   一律走入口文件的 `File.Exists` 循环，不要用 `Get-Command`。
+2. **三处同步**：新增/移除外部工具时，以下三处必须同时改，缺一不可：
+   - `setup.ps1` 的 `$wingetTools` 列表
+   - `README.md` 的「依赖工具」表
+   - 若 profile 需要探测：入口文件的工具名循环
+
+   新增命令别名/函数时同步更新 `README.md` 使用速查表。
+3. **优雅降级**：所有外部工具都是可选依赖。引用前用
+   `$global:__Tools.ContainsKey('<name>')` 判断，缺失时回退内置命令或静默跳过，
+   profile 不得因缺工具报错。
+4. **兼容性**：仅支持 PowerShell 7+（可用 `??`、`?.` 等语法）。
+5. **`setup.ps1` 幂等**：已安装的工具/模块、已存在的链接必须跳过，重复运行无副作用。
+6. **风格**：注释和文档用中文；别名简短小写（`gs`/`wup`），函数避免未批准动词；
+   commit message 用中文、前缀分类（`profile:` / `setup:` / `docs:` / `修复:` 等，见 git log）。
+
+## 多 agent 工作流
+
+- **一任务一分支**：分支名 `<type>/<slug>`，如 `feat/yazi-keybinds`、`fix/readme-font-id`、
+  `docs/usage`。不要在 main 上直接开发。
+- **避免撞车**：动手前先 `git log --oneline -5` + `git status` 了解当前状态。
+  `profile/aliases.ps1` 和 `README.md` 是撞车热点，改动尽量小而聚焦，不重排无关内容，
+  不做与任务无关的格式化。
+- **提交前验证**（必做）：
+  ```powershell
+  pwsh -NoProfile -Command ". $PROFILE; <冒烟验证本次改动引入的函数/别名>"
+  pwsh -NoProfile -File setup.ps1 -SkipTools   # 语法与链接逻辑不报错
+  ```
+- **不自动 commit/push**：除非用户明确要求。改动完成后报告改了什么、验证结果如何。
+- **有冲突先停**：发现工作区有他人未提交的改动时不要覆盖，先向用户说明。
+
+## 本机（用户日常机）注意点
+
+- 仓库目录即 `$PROFILE` 目录，`setup.ps1` 会自动跳过文件链接——在这台机器上改
+  profile 文件即时生效，新开终端即可验证。
+- `7z` 在本机实际是 NanaZip（商店版），代码里对 7z 的判断以 PATH 探测为准，
+  不要假设版本。

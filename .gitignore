@@ -19,10 +19,16 @@ backup-*/
 *zoxide-init-cache*
 *fnm-init-cache*
 
-# AI agent 规则文件（本地）
-AGENTS.md
+# AI 工具本地状态（会话/计划等运行时数据，不属于项目约定）
+# 注意：AGENTS.md、CLAUDE.md、.trae/rules/ 是要提交的约定文件，不要加进来
+.zcode/
+.claude/settings.local.json
+.codex/
 
-# 操作系统杂项
+# 编辑器 / 操作系统杂项
 Thumbs.db
 Desktop.ini
 .DS_Store
+.vscode/
+.idea/
+*.swp
