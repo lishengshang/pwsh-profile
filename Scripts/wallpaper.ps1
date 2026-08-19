@@ -34,10 +34,11 @@ function Show-Usage {
 function Send-Notify {
     param(
         [string]$Title,
-        [string]$Body,
-        [string]$Urgency = "normal"
+        [string]$Body
     )
-    if (-not $SILENT_MODE) {
+    if ($SILENT_MODE) { return }
+    # 通知是辅助功能：Toast API 不可用/失败时静默降级，不阻断壁纸主流程
+    try {
         if (Get-Command New-BurntToastNotification -ErrorAction SilentlyContinue) {
             New-BurntToastNotification -Text "$Title", "$Body"
         } else {
@@ -49,6 +50,9 @@ function Send-Notify {
             $toast = [Windows.UI.Notifications.ToastNotification]::new($template)
             [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier("PowerShell").Show($toast)
         }
+    }
+    catch {
+        Write-Verbose "通知发送失败: $_"
     }
 }
 
@@ -69,30 +73,37 @@ $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
 $RAW_FILENAME = "wall_$timestamp.png"
 $RAW_PATH = Join-Path $SAVE_DIR $RAW_FILENAME
 
-# --- 1. 下载 ---
+# --- 1. 下载（HttpClient：超时可控 + 非成功状态码抛异常 + 临时文件原子落盘）---
 Send-Notify -Title "Wallpaper" -Body "Downloading from Alcy..."
 
-$webClient = New-Object System.Net.WebClient
-$webClient.Headers.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+Add-Type -AssemblyName System.Net.Http
+$http = New-Object System.Net.Http.HttpClient
+$http.Timeout = [TimeSpan]::FromSeconds(60)
+$null = $http.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 
 try {
-    $webClient.DownloadFile($API_URL, $RAW_PATH)
+    $tmpPath = "$RAW_PATH.part"
+    $bytes = $http.GetByteArrayAsync($API_URL).GetAwaiter().GetResult()
+    [IO.File]::WriteAllBytes($tmpPath, $bytes)
+    Move-Item -Path $tmpPath -Destination $RAW_PATH -Force
     $DOWNLOAD_SUCCESS = $true
 } catch {
     $DOWNLOAD_SUCCESS = $false
     Write-Error "Download failed: $_"
+    # 下载中断/写盘失败时清理残留的 .part 临时文件
+    if ($tmpPath -and (Test-Path $tmpPath)) { Remove-Item $tmpPath -Force -ErrorAction SilentlyContinue }
 } finally {
-    $webClient.Dispose()
+    $http.Dispose()
 }
 
 if (-not $DOWNLOAD_SUCCESS -or -not (Test-Path $RAW_PATH)) {
-    Send-Notify -Title "Wallpaper Error" -Body "Download failed (Network/API Error)" -Urgency "critical"
+    Send-Notify -Title "Wallpaper Error" -Body "Download failed (Network/API Error)"
     exit 1
 }
 
 $fileInfo = Get-Item $RAW_PATH
 if ($fileInfo.Length -lt 20480) {
-    Send-Notify -Title "Wallpaper Error" -Body "Download failed (File too small/Invalid)" -Urgency "critical"
+    Send-Notify -Title "Wallpaper Error" -Body "Download failed (File too small/Invalid)"
     Remove-Item $RAW_PATH -Force
     exit 1
 }
@@ -109,7 +120,7 @@ try {
     # 触发解码，若文件损坏这里会抛异常
     $null = $bi.PixelWidth
 } catch {
-    Send-Notify -Title "Wallpaper Error" -Body "Not a valid image file" -Urgency "critical"
+    Send-Notify -Title "Wallpaper Error" -Body "Not a valid image file"
     Remove-Item $RAW_PATH -Force
     exit 1
 }
@@ -126,7 +137,7 @@ if ($ENABLE_UPSCALE) {
         $waifu2xExists = Get-Command waifu2x-ncnn-vulkan -ErrorAction SilentlyContinue
         if (-not $waifu2xExists) {
             if ($ENABLE_STRICT) {
-                Send-Notify -Title "Wallpaper Error" -Body "waifu2x not found, upscale aborted" -Urgency "critical"
+                Send-Notify -Title "Wallpaper Error" -Body "waifu2x not found, upscale aborted"
                 Remove-Item $RAW_PATH -Force
                 exit 1
             }
@@ -142,18 +153,22 @@ if ($ENABLE_UPSCALE) {
             try {
                 & waifu2x-ncnn-vulkan -i $RAW_PATH -o $UPSCALED_PATH -n 1 -s 2
                 if ($LASTEXITCODE -ne 0) { throw "waifu2x exited with code $LASTEXITCODE" }
+                # 返回 0 但没生成输出文件时不能当成功（否则删原图后 FINAL_PATH 指向空）
+                if (-not (Test-Path $UPSCALED_PATH)) { throw "waifu2x produced no output file" }
                 $FINAL_PATH = $UPSCALED_PATH
                 $MSG_EXTRA = "(Upscaled 2x from ${IMG_WIDTH}px)"
                 Remove-Item $RAW_PATH -Force
             }
             catch {
                 if ($ENABLE_STRICT) {
-                    Send-Notify -Title "Wallpaper Error" -Body "Upscale failed: $_" -Urgency "critical"
+                    Send-Notify -Title "Wallpaper Error" -Body "Upscale failed: $_"
                     Remove-Item $RAW_PATH -Force
+                    Remove-Item $UPSCALED_PATH -Force -ErrorAction SilentlyContinue
                     exit 1
                 }
                 Send-Notify -Title "Wallpaper" -Body "Upscale failed, using original: $_"
                 $MSG_EXTRA = "(upscale failed, original ${IMG_WIDTH}px)"
+                Remove-Item $UPSCALED_PATH -Force -ErrorAction SilentlyContinue
             }
         }
     } else {
@@ -171,7 +186,7 @@ if (-not ([System.Management.Automation.PSTypeName]'Wallpaper').Type) {
 using System;
 using System.Runtime.InteropServices;
 public class Wallpaper {
-    [DllImport("user32.dll", CharSet = CharSet.Auto)]
+    [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
     public static extern int SystemParametersInfo(int uAction, int uParam, string lpvParam, int fuWinIni);
 }
 "@
@@ -180,7 +195,14 @@ public class Wallpaper {
 $SPI_SETDESKWALLPAPER = 0x0014
 $SPIF_UPDATEINIFILE = 0x01
 $SPIF_SENDCHANGE = 0x02
-[Wallpaper]::SystemParametersInfo($SPI_SETDESKWALLPAPER, 0, $FINAL_PATH, $SPIF_UPDATEINIFILE -bor $SPIF_SENDCHANGE)
+$setOk = [Wallpaper]::SystemParametersInfo($SPI_SETDESKWALLPAPER, 0, $FINAL_PATH, $SPIF_UPDATEINIFILE -bor $SPIF_SENDCHANGE)
+if ($setOk -eq 0) {
+    # 返回 0 = 失败；取 Win32 错误码定位原因（文件路径无效/被占用等）
+    $win32err = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
+    Send-Notify -Title "Wallpaper Error" -Body "Set wallpaper failed (Win32Error=$win32err)"
+    Write-Error "SystemParametersInfo failed: Win32Error=$win32err, path=$FINAL_PATH"
+    exit 1
+}
 
 # --- 4. 清理 ---
 if ($ENABLE_CLEANUP) {

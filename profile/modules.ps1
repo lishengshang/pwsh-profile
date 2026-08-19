@@ -33,7 +33,11 @@ Unregister-Event -SourceIdentifier PowerShell.OnIdle -ErrorAction SilentlyContin
 # （否则模块无法正常生效：别名缺失、$PSCompletions 不完整、会话锁死），
 # 必须始终在 $PROFILE 顶层直接导入。因此无法 OnIdle 懒加载，
 # 冷启动 +~200ms 为官方设计约束的代价（见 PSCompletions 文档与 #155/#143）。
-Import-Module PSCompletions -ErrorAction SilentlyContinue
+# `*> $null` 吞掉模块内部版本检查的更新横幅（避免每次启动刷屏）；
+# PROFILE_NO_COMPLETIONS=1 完全跳过导入（离线/CI 场景——版本检查有网络请求）。
+if (-not $env:PROFILE_NO_COMPLETIONS) {
+    Import-Module PSCompletions -ErrorAction SilentlyContinue *> $null
+}
 
 # PSFzf 懒加载（OnIdle）
 $null = Register-EngineEvent -SourceIdentifier PowerShell.OnIdle -Action {

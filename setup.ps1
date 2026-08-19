@@ -21,18 +21,11 @@ $repoDir = [System.IO.Path]::GetFullPath($PSScriptRoot).TrimEnd('\')
 $profileDir = [System.IO.Path]::GetFullPath((Split-Path $PROFILE)).TrimEnd('\')
 $backupDir = Join-Path $profileDir "backup-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
 
-# 需要映射的条目：源文件/目录（在仓库内） -> 目标路径（在 $profileDir 下）
-$items = @(
-    @{ Source = 'Microsoft.PowerShell_profile.ps1'; Target = $PROFILE }
-    @{ Source = 'profile'; Target = Join-Path $profileDir 'profile' }
-    @{ Source = 'Scripts'; Target = Join-Path $profileDir 'Scripts' }
-    @{ Source = 'powershell.config.json'; Target = Join-Path $profileDir 'powershell.config.json' }
-)
-
-# 与 $PROFILE 无关的外部配置（清单单源维护在 Scripts/Get-ConfigLinks.ps1）：
-# 即使仓库即 $PROFILE 目录（本机直用仓库）也照常链接。
-# SkipIfExists：目标已存在时不动它（用户自己的配置优先），仅缺失时引入仓库默认。
-$extraItems = . (Join-Path $repoDir 'Scripts\Get-ConfigLinks.ps1')
+# 管理链接清单（唯一事实来源，Scripts/Get-ManagedLinks.ps1）：
+#   Core 条目部署 $PROFILE 本体（仓库即 $PROFILE 目录时整组跳过）；
+#   外部条目（starship/lazygit/yazi/nvim）即使仓库即 $PROFILE 目录也照常链接；
+#   SkipIfExists：目标已存在时不动它（用户自己的配置优先），仅缺失时引入仓库默认。
+$linkItems = @(. (Join-Path $repoDir 'Scripts\Get-ManagedLinks.ps1'))
 
 # winget 工具清单（与 README「依赖工具」表保持一致）
 $wingetTools = @(
@@ -57,15 +50,52 @@ $wingetTools = @(
     @{ Name = 'WinLibs gcc'; Id = 'BrechtSanders.WinLibs.POSIX.UCRT' }
 )
 
-# 登记本机由 setup 创建过的文件类链接目标（Repair-ConfigLinks.ps1 的修复依据；
-# 机器本地状态，不入库）。git pull / 编辑器原子保存会替换仓库文件 inode 弄断
-# 硬链接，登记过的目标可自动重链；未登记（用户自有配置）永远不碰。
-function Add-LinkRegistry ([string]$target) {
-    $registry = Join-Path $env:LOCALAPPDATA 'pwsh-profile\linked-targets.txt'
-    $dir = Split-Path $registry
-    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
-    $existing = if (Test-Path $registry) { Get-Content $registry } else { @() }
-    if ($existing -notcontains $target) { Add-Content -Path $registry -Value $target }
+# 链接注册表（机器本地状态，不入库）：登记 setup 创建/发现的受管目标，
+# Repair-ConfigLinks.ps1 的修复依据。读写函数单源在 Scripts/LinkRegistry.ps1
+# （原子写，防并发损坏）。
+. (Join-Path $repoDir 'Scripts\LinkRegistry.ps1')
+$__RegistryPath = Join-Path $env:LOCALAPPDATA 'pwsh-profile\linked-targets.json'
+
+# 判定目标是否已由本仓库管理（幂等跳过的依据）。返回 @{ IsManaged; LinkType }：
+#   SymbolicLink/Junction -> Target 属性指向仓库源
+#   HardLink              -> fsutil 同 inode 路径包含仓库源
+#   Copy / CopyDirectory  -> 仅当注册表已登记为该类型且 Source 匹配
+#                            （普通文件再比哈希；内容恰好相同的独立文件不算——
+#                            Hash 相同 ≠ 受本项目管理，避免误跳过建链）
+function Get-ManagedLinkState ([string]$src, [string]$target) {
+    $tgt = Get-Item -LiteralPath $target -Force -ErrorAction SilentlyContinue
+    if (-not $tgt) { return @{ IsManaged = $false; LinkType = $null } }
+    $srcFull = [System.IO.Path]::GetFullPath($src).TrimEnd('\')
+    if ($tgt.LinkType -in 'SymbolicLink', 'Junction') {
+        if ($tgt.Target -and ([System.IO.Path]::GetFullPath($tgt.Target).TrimEnd('\') -ieq $srcFull)) {
+            return @{ IsManaged = $true; LinkType = $tgt.LinkType }
+        }
+        return @{ IsManaged = $false; LinkType = $null }
+    }
+    $entry = @(Get-LinkRegistryEntries $__RegistryPath) |
+        Where-Object { $_.Target -ieq $target } | Select-Object -First 1
+    if ($tgt.PSIsContainer) {
+        # 目录仅认可登记过的 CopyDirectory（Junction/SymbolicLink 已在上面处理）
+        if ($entry -and $entry.LinkType -eq 'CopyDirectory' -and
+            (([System.IO.Path]::GetFullPath($entry.Source).TrimEnd('\')) -ieq $srcFull)) {
+            return @{ IsManaged = $true; LinkType = 'CopyDirectory' }
+        }
+        return @{ IsManaged = $false; LinkType = $null }
+    }
+    # 文件：先查 HardLink 关系（fsutil 输出同 inode 全部路径，不带盘符）
+    $srcNorm = ($srcFull -replace '^[A-Za-z]:', '').ToLowerInvariant()
+    $links = (fsutil hardlink list $target 2>$null) |
+        ForEach-Object { (($_ -replace '^[A-Za-z]:', '').TrimEnd('\')).ToLowerInvariant() }
+    if ($links -contains $srcNorm) { return @{ IsManaged = $true; LinkType = 'HardLink' } }
+    # 普通文件：注册表登记为 Copy 且 Source 匹配时，内容一致才算管理
+    if ($entry -and $entry.LinkType -eq 'Copy' -and
+        (([System.IO.Path]::GetFullPath($entry.Source).TrimEnd('\')) -ieq $srcFull)) {
+        if ((Get-FileHash $src -ErrorAction SilentlyContinue).Hash -eq
+            (Get-FileHash $target -ErrorAction SilentlyContinue).Hash) {
+            return @{ IsManaged = $true; LinkType = 'Copy' }
+        }
+    }
+    return @{ IsManaged = $false; LinkType = $null }
 }
 
 function Test-SymlinkAvailable {
@@ -130,7 +160,7 @@ function Initialize-LazyVim {
         return
     }
     Remove-Item -Path (Join-Path $nvimDir '.git') -Recurse -Force
-    # starter 默认忽略 lazy-lock.yml；多设备插件版本一致必须跟踪它
+    # starter 默认忽略 lazy-lock.json；多设备插件版本一致必须跟踪它
     $gi = Join-Path $nvimDir '.gitignore'
     if (Test-Path $gi) {
         (Get-Content $gi) | Where-Object { $_ -notmatch 'lazy-lock' } | Set-Content $gi
@@ -179,11 +209,11 @@ function Install-PwshModules {
 }
 
 # ================= 文件链接 =================
-# $items 的目标在 $PROFILE 目录下，仓库目录即 $PROFILE 目录时跳过；
-# $extraItems 是 starship 等外部配置，任何情况下都链接。
+# Core 条目的目标在 $PROFILE 目录下，仓库目录即 $PROFILE 目录时跳过
+# （源与目标同路径，无法自链）；外部条目任何情况下都链接。
 if ($repoDir -ieq $profileDir) {
     Write-Host '检测到仓库目录就是 $PROFILE 所在目录（本机直用仓库），跳过 $PROFILE 相关文件链接。' -ForegroundColor DarkYellow
-    $items = @()
+    $linkItems = @($linkItems | Where-Object { -not $_.Core })
 }
 
 $useSymlink = Test-SymlinkAvailable
@@ -194,19 +224,8 @@ if (-not $useSymlink) {
 # 链接必须在 Initialize-LazyVim 之后建立（nvim/ 目录要先存在）
 Initialize-LazyVim
 
-$linkItems = @($items) + @($extraItems)
-
-# 备份已存在的目标文件/目录（SkipIfExists 的条目不备份——它们不会被改动）
-$needBackup = $linkItems | Where-Object { -not $_.SkipIfExists -and (Test-Path $_.Target) }
-if ($needBackup) {
-    New-Item -ItemType Directory -Path $backupDir -Force | Out-Null
-    foreach ($item in $needBackup) {
-        $name = Split-Path $item.Target -Leaf
-        Move-Item -Path $item.Target -Destination (Join-Path $backupDir $name) -Force
-        Write-Host "已备份: $($item.Target) -> $backupDir\$name" -ForegroundColor DarkYellow
-    }
-}
-
+$backupCreated = $false
+$copyDeployed = $false
 foreach ($item in $linkItems) {
     $src = Join-Path $repoDir $item.Source
     if (-not (Test-Path $src)) {
@@ -214,12 +233,39 @@ foreach ($item in $linkItems) {
         continue
     }
 
-    if (Test-Path $item.Target) {
+    # 幂等：目标已是受管链接/副本时跳过，并补登记（注册表丢失/手工建的正确
+    # 链接也能恢复 Repair 的修复能力）
+    $state = Get-ManagedLinkState $src $item.Target
+    if ($state.IsManaged) {
+        Write-Host "已是正确链接，跳过: $($item.Target)" -ForegroundColor DarkGray
+        Set-LinkRegistryEntry -Path $__RegistryPath -Target $item.Target -Source $src -LinkType $state.LinkType
+        continue
+    }
+
+    # Get-Item -Force 能拿到断链对象（指向已不存在目标的符号链接/Junction，
+    # Test-Path 对断链文件返回 False 但对象仍占用路径，不清理则 New-Item 失败）
+    $existing = Get-Item -LiteralPath $item.Target -Force -ErrorAction SilentlyContinue
+    if ($existing) {
         if ($item.SkipIfExists) {
             Write-Host "已存在，跳过: $($item.Target)" -ForegroundColor DarkGray
             continue
         }
-        Remove-Item -Path $item.Target -Recurse -Force
+        $isBrokenLink = $existing.LinkType -and -not (Test-Path -LiteralPath $item.Target)
+        if ($isBrokenLink) {
+            # 断链对象不含用户可读数据，直接清理后重建
+            Remove-Item -LiteralPath $item.Target -Force
+            Write-Host "已清理失效链接: $($item.Target)" -ForegroundColor DarkGray
+        }
+        else {
+            # 普通文件/目录，或指向别处的有效链接：均视为用户现有配置，先备份
+            if (-not $backupCreated) {
+                New-Item -ItemType Directory -Path $backupDir -Force | Out-Null
+                $backupCreated = $true
+            }
+            $name = Split-Path $item.Target -Leaf
+            Move-Item -LiteralPath $item.Target -Destination (Join-Path $backupDir $name) -Force
+            Write-Host "已备份: $($item.Target) -> $backupDir\$name" -ForegroundColor DarkYellow
+        }
     }
 
     $parent = Split-Path $item.Target
@@ -230,7 +276,7 @@ foreach ($item in $linkItems) {
     if ($useSymlink) {
         $null = New-Item -ItemType SymbolicLink -Path $item.Target -Target $src -Force
         Write-Host "已链接: $($item.Source) -> $($item.Target)" -ForegroundColor Green
-        if (-not (Get-Item $src).PSIsContainer) { Add-LinkRegistry $item.Target }
+        Set-LinkRegistryEntry -Path $__RegistryPath -Target $item.Target -Source $src -LinkType 'SymbolicLink'
     }
     else {
         # 无符号链接权限时的回退：目录用 Junction、文件用 HardLink（均无需特权，
@@ -250,17 +296,22 @@ foreach ($item in $linkItems) {
             } catch { }
         }
         if ($linked) {
+            $linkType = if ($isDir) { 'Junction' } else { 'HardLink' }
             Write-Host "已链接($($(if ($isDir) {'junction'} else {'hardlink'}))): $($item.Source) -> $($item.Target)" -ForegroundColor Green
-            if (-not $isDir) { Add-LinkRegistry $item.Target }
+            Set-LinkRegistryEntry -Path $__RegistryPath -Target $item.Target -Source $src -LinkType $linkType
             continue
         }
+        # 最终回退：Copy 模式（不实时同步；文件由 Repair 按哈希刷新、
+        # 目录由 Repair 用 robocopy 镜像同步，psync 拉取后自动对齐）
         if ((Get-Item $src).PSIsContainer) {
             Copy-Item -Path $src -Destination $item.Target -Recurse -Force
+            Set-LinkRegistryEntry -Path $__RegistryPath -Target $item.Target -Source $src -LinkType 'CopyDirectory'
         }
         else {
             Copy-Item -Path $src -Destination $item.Target -Force
-            Add-LinkRegistry $item.Target
+            Set-LinkRegistryEntry -Path $__RegistryPath -Target $item.Target -Source $src -LinkType 'Copy'
         }
+        $copyDeployed = $true
         Write-Host "已复制: $($item.Source) -> $($item.Target)" -ForegroundColor Green
     }
 }
@@ -301,6 +352,9 @@ for ($i = 0; $i -lt 7; $i++) {
 }
 
 Write-Host "安装完成。请重新打开 PowerShell 或执行 `. `$PROFILE` 加载配置。" -ForegroundColor Cyan
-if ($needBackup) {
+if ($copyDeployed) {
+    Write-Warning '部分条目以复制模式部署（无符号链接/硬链接权限）：不实时同步，但 psync / 重跑 setup 会自动镜像刷新。'
+}
+if ($backupCreated) {
     Write-Host "原配置已备份到: $backupDir" -ForegroundColor Cyan
 }

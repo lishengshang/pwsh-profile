@@ -73,8 +73,8 @@ git clone https://github.com/lishengshang/pwsh-profile.git $HOME\Documents\Power
 | `gl` / `glog` | 日志（图形+装饰）/ 详细日志（颜色+日期/作者） |
 | `gd` / `gds` | diff / diff --staged |
 | `gco` / `gcb` / `gb` / `gbn` | checkout / checkout -b / branch / 当前分支名 |
-| `gst` / `grs` / `gclean` | stash / restore / 清理已合并分支（保护 main/master/dev） |
-| `gquick <msg>` | add --all → commit → push（失败即中止） |
+| `gst` / `grs` / `gclean` | stash / restore / 清理已合并分支（保护 main/master/dev；支持 `-WhatIf` 预览、`-Confirm` 逐个确认） |
+| `gquick <msg>` | add --all → commit（失败即中止；默认不推送，`-Push` 才推送） |
 
 ### 系统与网络
 
@@ -83,7 +83,7 @@ git clone https://github.com/lishengshang/pwsh-profile.git $HOME\Documents\Power
 | `myip` | 查询公网 IP（多 API 备用链） |
 | `wup` | winget 一键升级全部已安装工具 |
 | `wum` | 一键更新 PSGallery 模块（PSCompletions/PSFzf 等；更新后需新开终端） |
-| `portof <port>` / `killport <port>` | 查询占用端口的进程 / 终止它 |
+| `portof <port>` / `killport <port>` | 查询占用端口的进程 / 终止它（支持 `-WhatIf` 预览、`-Confirm` 确认） |
 | `ps-reboot [delay]` / `ps-shutdown [delay]` | 重启 / 关机（不覆盖系统 `shutdown.exe`） |
 | `ps-hibernate` / `ps-suspend` / `lock` | 休眠 / 睡眠 / 锁屏 |
 
@@ -100,7 +100,7 @@ git clone https://github.com/lishengshang/pwsh-profile.git $HOME\Documents\Power
 ```
 Microsoft.PowerShell_profile.ps1   入口：重建 PATH → 探测工具 → 按序加载 profile/*.ps1
 profile/init-cache.ps1             工具 init 缓存助手（7 天 TTL + 升级即失效 + 原子写入）
-profile/env.ps1                    fnm 缓存、EDITOR/VISUAL、fzf 配色
+profile/env.ps1                    fnm 初始化（每次现场执行）、EDITOR/VISUAL、fzf 配色
 profile/prompt.ps1                 starship 提示符（缓存懒加载到首次 prompt）
 profile/psreadline.ps1             PSReadLine（历史搜索、配色、快捷键）
 profile/modules.ps1                zoxide 懒加载；PSCompletions 同步加载 / PSFzf OnIdle 懒加载
@@ -115,21 +115,32 @@ powershell.config.json             执行策略 RemoteSigned
 
 ### 多设备同步
 
-仓库管理的三份外部配置（starship / lazygit / LazyVim）决定了「改一处、全设备一致」：
+仓库管理的四份外部配置（starship / lazygit / yazi / LazyVim）决定了「改一处、全设备一致」：
 
 - **加 Neovim 插件**：在 `nvim/lua/plugins/` 新建一个 `.lua` 文件 → commit/push → 其他设备 `psync` 后重开 nvim，lazy.nvim 自动安装。
 - **改键位/选项/主题**：改 `nvim/lua/config/`、`lazyvim.json`（extras）、`lazygit/config.yml` → commit/push → `psync`。
-- **插件版本对齐**：`nvim/lazy-lock.yml` 随仓库提交，各设备按锁定版本自动补装。
+- **插件版本对齐**：`nvim/lazy-lock.json` 随仓库提交，各设备按锁定版本自动补装。
 - **每设备本地生成、不入库**：插件本体（`nvim-data/lazy/`）、Mason 的 LSP 服务器、treesitter 编译产物——首次打开 nvim 时按仓库声明自动重建。
 - **链接自愈**：git 的原子写入会弄断文件类硬链接，`psync` 拉取后会自动重链（`Scripts/Repair-ConfigLinks.ps1`）；只修复 setup 创建过的链接，你自己的存量配置（如原有 starship.toml）不会被碰。
 - **输入法自动切换**（`nvim/lua/plugins/ime.lua`，smart-ime.nvim）：进插入模式自动切中文、退出切英文；若你改过系统的中/英切换键，同步改文件里的 `switch_key`。
 
 
-环境变量开关：`PROFILE_NO_TIME`（关闭耗时行）、`PROFILE_NO_STARTUP`（关闭启动信息）、`PROFILE_NO_FZF_TAB`（恢复默认 Tab 补全）、`PROFILE_DEBUG`（打印各模块耗时）、`PROFILE_KEEP_PARENT_PATH`（保留父进程 PATH）。
+环境变量开关：`PROFILE_QUIET`（强制静默，不显示问候/耗时）、`PROFILE_NO_TIME`（关闭耗时行）、`PROFILE_NO_STARTUP`（关闭启动信息）、`PROFILE_NO_COMPLETIONS`（跳过 PSCompletions 导入，离线/CI 用）、`PROFILE_NO_FZF_TAB`（恢复默认 Tab 补全）、`PROFILE_DEBUG`（打印各模块耗时与加载错误）、`PROFILE_KEEP_PARENT_PATH`（保留父进程 PATH）。
+
+> 输出被重定向（管道捕获、CI 日志）或无用户会话时自动静默，不会污染 JSON/CSV/脚本输出。注意：终端里直接跑 `pwsh -Command`（输出未重定向）仍会显示横幅——脚本/CI 中需要绝对无输出时请显式设 `PROFILE_QUIET=1`。
 
 > **想自定义？** 本仓库只做"接线"：提示符 → [Starship 官方文档](https://starship.rs)；模糊查找 → [fzf](https://github.com/junegunn/fzf) / [PSFzf](https://github.com/psfzf/PSFzf)；命令补全 → [PSCompletions](https://github.com/abgox/PSCompletions)；编辑器 → [LazyVim](https://www.lazyvim.org/)；终端 → [Windows Terminal](https://github.com/microsoft/terminal)。
 
 ## 依赖工具
+
+### 必需依赖
+
+| 工具 | 用途 | 备注 |
+|---|---|---|
+| PowerShell 7+ | 运行时（`?.` 等 PS7 语法） | `bootstrap.ps1` 自动安装 |
+| Git | `psync` 同步、bootstrap 克隆、LazyVim starter 引入；yazi 的 MIME 检测也用其自带的 `file.exe`（`YAZI_FILE_ONE` 自动探测） | `bootstrap.ps1` 自动安装 |
+
+### 可选工具（缺失时自动降级）
 
 | 工具 | winget ID | 用途 | 缺失时回退 |
 |---|---|---|---|
@@ -154,7 +165,7 @@ powershell.config.json             执行策略 RemoteSigned
 | PSFzf | （`Install-Module`）| fzf 与 PSReadLine 集成 | - |
 | Terminal-Icons | （`Install-Module`）| eza 缺失时 `ls` 图标兜底 | - |
 
-> 所有工具均为可选：启动时用 `File.Exists` 遍历 PATH 一次性探测，缺失的工具其别名/函数自动跳过或回退，profile 不会因缺工具而报错。`setup.ps1`（不加 `-SkipTools`）自动安装上表全部工具与模块。
+> 上表可选工具：启动时用 `File.Exists` 遍历 PATH 一次性探测，缺失的工具其别名/函数自动跳过或回退，profile 不会因缺工具而报错。`setup.ps1`（不加 `-SkipTools`）自动安装上表全部工具与模块。
 > 更新：命令行工具用 `wup`（winget），PowerShell 模块用 `wum`（`Update-Module`），**更新模块后需新开终端生效**。
 
 ## 常见问题

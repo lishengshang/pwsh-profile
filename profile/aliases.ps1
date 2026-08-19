@@ -55,26 +55,73 @@ if ($global:__Tools.ContainsKey('eza')) {
 # ==============================================================
 # Profile 管理
 # ==============================================================
+# 调用 $env:EDITOR。它可能含参数（如 "nvim --clean"）甚至带引号的完整路径
+# （如 '"C:\Program Files\Neovim\bin\nvim.exe" --clean'——按空白切分会把
+# 带空格路径切碎）。约定：带空格的路径必须加双引号，其余按空白切分参数。
+# 返回 $false 表示未设置 EDITOR；启动失败/异常退出码给出警告。
+function __Invoke-Editor ([string]$Path) {
+    if (-not $env:EDITOR) { return $false }
+    $s = $env:EDITOR.Trim()
+    $cmd = $null; $rest = ''
+    if ($s.StartsWith('"')) {
+        # 引号包裹的可执行路径 + 尾随参数
+        $end = $s.IndexOf('"', 1)
+        if ($end -gt 0) {
+            $cmd = $s.Substring(1, $end - 1)
+            $rest = $s.Substring($end + 1).Trim()
+        }
+    }
+    if (-not $cmd) {
+        $sp = $s.IndexOf(' ')
+        if ($sp -gt 0) { $cmd = $s.Substring(0, $sp); $rest = $s.Substring($sp + 1).Trim() }
+        else { $cmd = $s }
+    }
+    $argList = @()
+    if ($rest) { $argList += @($rest -split '\s+' | Where-Object { $_ }) }
+    $argList += $Path
+    try {
+        & $cmd @argList
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning "编辑器退出码异常: $LASTEXITCODE（命令: $cmd）"
+        }
+    }
+    catch {
+        Write-Warning "编辑器启动失败: $cmd（请检查 `$env:EDITOR = \`"$env:EDITOR\`"）"
+    }
+    return $true
+}
+
 # 使用未批准动词会触发警告，故采用普通命名 + 别名；code 缺失时回退 $EDITOR
 function profile-edit {
     if (Get-Command code -ErrorAction SilentlyContinue) { code $PROFILE }
-    elseif ($env:EDITOR) { & $env:EDITOR $PROFILE }
-    else { Write-Host '未找到 code 且未设置 $EDITOR' -ForegroundColor Yellow }
+    elseif (-not (__Invoke-Editor $PROFILE)) {
+        Write-Host '未找到 code 且未设置 $EDITOR' -ForegroundColor Yellow
+    }
 }
 Set-Alias -Name ep -Value profile-edit -Force
 
 # 多设备同步：拉取本 profile 仓库的最新配置（重开终端生效；nvim 插件重开 nvim 自动对齐）
+# 仓库目录由入口发现（$global:__ProfileRepoDir）——外置仓库 + HardLink/Junction
+# 部署时安装目录没有 .git，不能拿 __ProfileDir 当仓库用。
 function psync {
-    if (-not (Test-Path (Join-Path $global:__ProfileDir '.git'))) {
-        Write-Host "当前 profile 目录不是 git 仓库（$($global:__ProfileDir)），请到本机仓库克隆目录手动 git pull。" -ForegroundColor Yellow
+    if (-not $global:__Tools.ContainsKey('git')) {
+        Write-Host '未找到 git，无法同步。请安装 Git 后重试。' -ForegroundColor Yellow
         return
     }
-    git -C $global:__ProfileDir pull --rebase @args
+    $repo = $global:__ProfileRepoDir
+    if (-not $repo) {
+        Write-Host "未定位到 profile 仓库目录（安装目录 $($global:__ProfileDir)）。请到仓库克隆目录手动 git pull。" -ForegroundColor Yellow
+        return
+    }
+    & $global:__Tools['git'].Source -C $repo pull --rebase @args
     if ($LASTEXITCODE -eq 0) {
         # git 的原子写入会替换仓库文件 inode、弄断文件类硬链接，拉取后自动修复
-        $repair = Join-Path $global:__ProfileDir 'Scripts\Repair-ConfigLinks.ps1'
+        $repair = Join-Path $repo 'Scripts\Repair-ConfigLinks.ps1'
         if (Test-Path $repair) { & $repair }
         Write-Host '配置已同步。重开终端生效；nvim 配置有变时重开 nvim 自动安装插件。' -ForegroundColor Cyan
+    }
+    else {
+        Write-Host "git pull 失败（exit $LASTEXITCODE）：请检查冲突/网络后重试，或到 $repo 手动处理。" -ForegroundColor Yellow
     }
 }
 
@@ -93,7 +140,18 @@ function which ($cmd) {
         Write-Host "未找到命令: $cmd" -ForegroundColor Yellow
         return
     }
-    $c | Select-Object -ExpandProperty Source
+    # 按命令类型分派：外部命令给路径；别名/函数的 Source 为空，
+    # 给出定义或类型标识，避免输出空白行
+    switch ($c.CommandType) {
+        'Application'    { $c.Source }
+        'ExternalScript' { $c.Source }
+        'Alias'          { "$($c.Name) -> $($c.Definition)" }
+        'Function'       {
+            $file = $c.ScriptBlock.File
+            if ($file) { "function: $($c.Name) ($file)" } else { "function: $($c.Name)" }
+        }
+        default          { "$($c.CommandType.ToString().ToLower()): $($c.Name)" }
+    }
 }
 
 # grep -> ripgrep (rg)
@@ -133,13 +191,21 @@ function gb   { git branch @args }
 function gst  { git stash @args }
 function grs  { git restore @args }
 function gbn  { git rev-parse --abbrev-ref HEAD }
-function gquick ($msg) {
-    if (-not $msg) { Write-Host "用法: gquick <commit message>" -ForegroundColor Yellow; return }
+# 快速提交：add --all + commit。默认不推送（避免误推密钥/临时文件上远程），
+# 显式 -Push 才推送。注意 add --all 会包含未跟踪文件，提交前建议先 gs 看一眼。
+function gquick {
+    param([string]$msg, [switch]$Push)
+    if (-not $msg) { Write-Host "用法: gquick <commit message> [-Push]" -ForegroundColor Yellow; return }
     git add --all
     if ($LASTEXITCODE -ne 0) { return }
     git commit -m $msg
     if ($LASTEXITCODE -ne 0) { return }
-    git push
+    if ($Push) {
+        git push
+    }
+    else {
+        Write-Host '已提交（未推送）。推送: gp' -ForegroundColor DarkGray
+    }
 }
 
 # 详细日志（图形 + 颜色 + 日期/作者）
@@ -154,10 +220,19 @@ if ($global:__Tools.ContainsKey('lazygit')) {
     function lg { lazygit @args }
 }
 
-# 清理已合并到当前分支的本地分支（保护 main/master/dev/develop 与当前分支）
+# 清理已合并到当前分支的本地分支。保护当前分支与 main/master/dev/develop
+# ——正则 \b 匹配分支名中包含这些词的也不删（如 feature/main-refactor，
+# 保守取向）。支持 -WhatIf 预览、-Confirm 逐个确认。
 function gclean {
+    [CmdletBinding(SupportsShouldProcess)]
+    param()
     git branch --merged | Where-Object { $_ -notmatch '^\*' -and $_ -notmatch '\b(main|master|dev|develop)\b' } |
-        ForEach-Object { git branch -d $_.Trim() }
+        ForEach-Object {
+            $b = $_.Trim()
+            if ($PSCmdlet.ShouldProcess($b, '删除已合并分支')) {
+                git branch -d $b
+            }
+        }
 }
 
 # ==============================================================
@@ -214,14 +289,19 @@ function Get-PortProcess ($port) {
 }
 Set-Alias -Name portof -Value Get-PortProcess
 
-function Stop-Port ($port) {
+# 高风险操作：支持 -WhatIf 预览、-Confirm 逐个确认（避免误杀服务/数据库进程）
+function Stop-Port {
+    [CmdletBinding(SupportsShouldProcess)]
+    param($port)
     $conns = Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue
     if (-not $conns) { Write-Host "端口 $port 未被占用" -ForegroundColor Green; return }
     $conns.OwningProcess | Sort-Object -Unique | ForEach-Object {
         $proc = Get-Process -Id $_ -ErrorAction SilentlyContinue
         $pname = if ($proc) { $proc.Name }
-        Write-Host "终止: $pname (PID $_)" -ForegroundColor Yellow
-        Stop-Process -Id $_ -Force
+        if ($PSCmdlet.ShouldProcess("$pname (PID $_)", '终止进程')) {
+            Write-Host "终止: $pname (PID $_)" -ForegroundColor Yellow
+            Stop-Process -Id $_ -Force
+        }
     }
 }
 Set-Alias -Name killport -Value Stop-Port
@@ -237,12 +317,17 @@ if ($global:__Tools.ContainsKey('7z')) {
 }
 function codehere {
     if (Get-Command code -ErrorAction SilentlyContinue) { code . }
-    elseif ($env:EDITOR) { & $env:EDITOR . }
-    else { Write-Host '未找到 code 且未设置 $EDITOR' -ForegroundColor Yellow }
+    elseif (-not (__Invoke-Editor .)) {
+        Write-Host '未找到 code 且未设置 $EDITOR' -ForegroundColor Yellow
+    }
 }
 Set-Alias -Name ch -Value codehere
 
 # ==============================================================
 # 自定义脚本（使用相对路径，避免硬编码）
 # ==============================================================
-function wallpaper { & "$global:__ProfileDir\Scripts\wallpaper.ps1" @args }
+function wallpaper {
+    # 优先仓库目录（Copy 降级模式下安装目录是旧副本，仓库的才是最新），回退安装目录
+    $base = if ($global:__ProfileRepoDir) { $global:__ProfileRepoDir } else { $global:__ProfileDir }
+    & (Join-Path $base 'Scripts\wallpaper.ps1') @args
+}

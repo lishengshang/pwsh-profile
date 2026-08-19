@@ -4,15 +4,22 @@
 # 注：PATH 重建已提前到入口（Microsoft.PowerShell_profile.ps1）的
 # 工具探测之前执行，此处只处理 fnm 缓存与默认编辑器。
 
-# fnm (Node 版本管理) -- 缓存 7 天 + 升级即失效，原子写入
-if (Initialize-CachedInit -Command 'fnm' -CacheFile "$env:TEMP\fnm-init-cache.ps1" -Arguments @('env','--use-on-cd','--shell','powershell')) {
-    # 缓存里的 $env:PATH 是生成时的快照，会覆盖上面刷新的 PATH；
-    # 只取 FNM_* 变量，PATH 用已刷新的值 + fnm shim 前置
-    $_cleanPath = $env:PATH
-    . "$env:TEMP\fnm-init-cache.ps1"
-    $env:PATH = $_cleanPath
-    if ($env:FNM_MULTISHELL_PATH) {
-        $env:PATH = "$env:FNM_MULTISHELL_PATH;$env:PATH"
+# fnm (Node 版本管理)
+# 注意：fnm env 输出的 FNM_MULTISHELL_PATH / PATH 是每 shell 进程独立的临时
+# 路径，跨会话缓存 7 天会导致新终端指向旧进程目录（失效 / 多终端互相污染），
+# 因此不做缓存，每次启动现场执行一次（几十毫秒，可靠性优先）。
+if ($global:__Tools.ContainsKey('fnm')) {
+    Remove-Item "$env:TEMP\fnm-init-cache.ps1" -ErrorAction SilentlyContinue   # 清理历史缓存产物
+    $out = & $global:__Tools['fnm'].Source env --use-on-cd --shell powershell 2>$null | Out-String
+    if ($out) {
+        # fnm env 把生成时的 PATH 快照写进 $env:PATH（还可能含父进程遗留的旧
+        # multishell），恢复刷新过的 PATH 后只前置本进程的 shim 目录
+        $_cleanPath = $env:PATH
+        Invoke-Expression $out | Out-Null
+        $env:PATH = $_cleanPath
+        if ($env:FNM_MULTISHELL_PATH) {
+            $env:PATH = "$env:FNM_MULTISHELL_PATH;$env:PATH"
+        }
     }
 }
 
@@ -35,8 +42,9 @@ if (-not $env:EDITOR -and $global:__Tools.ContainsKey('nvim')) {
 # 位置（系统级/用户级安装路径不同），找到后设置 YAZI_FILE_ONE 指向完整路径
 # ——MSYS DLL 与 exe 同目录，yazi 直接调起即可，无需 Git Bash 环境。
 if (-not $env:YAZI_FILE_ONE -and $global:__Tools.ContainsKey('yazi')) {
+    # git 用入口 File.Exists 探测结果（启动路径禁用 Get-Command，见 AGENTS.md）
     foreach ($_git in @(
-        (Get-Command git -ErrorAction SilentlyContinue).Source
+        $global:__Tools['git']?.Source
         "$env:ProgramFiles\Git\cmd\git.exe"
         "$env:LOCALAPPDATA\Programs\Git\cmd\git.exe"
     )) {

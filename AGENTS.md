@@ -21,11 +21,11 @@ starship.toml                      提示符主题（SkipIfExists 链接到 ~/.c
 lazygit/config.yml                 lazygit 主题 Solarized Dark（链接到 %APPDATA%\lazygit\）
 yazi/theme.toml                    yazi 主题（链接到 %APPDATA%\yazi\config\，flavor 每设备装不入库）
 nvim/                              LazyVim 配置（链接到 $env:LOCALAPPDATA\nvim）
-Scripts/                           独立脚本（wallpaper.ps1、Get-ConfigLinks.ps1、Repair-ConfigLinks.ps1）
+Scripts/                           独立脚本（wallpaper.ps1、Get-ManagedLinks.ps1、LinkRegistry.ps1、Repair-ConfigLinks.ps1）
 windows-terminal/                  终端配色与说明
 ```
 
-**nvim/ 约定**：只入库配置声明（lua/、lazyvim.json、lazy-lock.yml）；插件本体、
+**nvim/ 约定**：只入库配置声明（lua/、lazyvim.json、lazy-lock.json）；插件本体、
 Mason LSP、treesitter 产物在各设备 `$env:LOCALAPPDATA\nvim-data` 自动重建，不碰它们。
 改插件/键位 = 改 `nvim/` 内文件并提交，其他设备 `psync` 后重开 nvim 对齐。
 
@@ -41,8 +41,10 @@ Mason LSP、treesitter 产物在各设备 `$env:LOCALAPPDATA\nvim-data` 自动�
    - 若 profile 需要探测：入口文件的工具名循环
 
    新增命令别名/函数时同步更新 `README.md` 使用速查表。
-   外部配置链接（starship/lazygit/yazi/nvim）的清单单源维护在
-   `Scripts/Get-ConfigLinks.ps1`，setup 与修复脚本都引用它，改链接只改这一处。
+   全部管理链接（核心 profile 文件 + starship/lazygit/yazi/nvim 外部配置）的清单
+   单源维护在 `Scripts/Get-ManagedLinks.ps1`，setup 与修复脚本都引用它，改链接只改
+   这一处。链接注册表（%LOCALAPPDATA%\pwsh-profile\linked-targets.json）记录
+   Target/Source/LinkType 三元组，Repair 按原类型修复，勿只记路径。
    注意：git pull 和编辑器原子保存会弄断文件类硬链接，`psync`/`setup.ps1`
    结束时会自动调用 `Scripts/Repair-ConfigLinks.ps1` 修复——改动涉及被链接的
    配置文件后，无需手动处理链接。
