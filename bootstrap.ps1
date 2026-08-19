@@ -34,6 +34,19 @@ function Assert-Tool {
     if ($LASTEXITCODE -ne 0) {
         throw "安装 $Name 失败（exit $LASTEXITCODE），可稍后手动安装后重试"
     }
+    # 刚装完的工具不会自动出现在当前进程 PATH，从注册表（Machine+User）重建
+    $env:PATH = [Environment]::GetEnvironmentVariable('PATH', 'Machine') + ';' +
+        [Environment]::GetEnvironmentVariable('PATH', 'User')
+}
+
+# winget 安装的工具可能不在注册表 PATH（如 per-user 安装到固定目录），兜底探测
+function Get-ToolPath ([string]$Name, [string[]]$Fallbacks) {
+    $cmd = Get-Command $Name -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    foreach ($p in $Fallbacks) {
+        if ($p -and (Test-Path $p)) { return $p }
+    }
+    return $null
 }
 
 # 1. winget（Windows 10 1809+ 自带 App Installer）
@@ -44,6 +57,15 @@ if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
 # 2. PowerShell 7 + Git
 Assert-Tool 'pwsh' 'Microsoft.PowerShell'
 Assert-Tool 'git' 'Git.Git'
+
+# git 解析（PATH 重建后仍找不到时兜底常见安装路径，git clone 依赖它）
+$gitPath = Get-ToolPath 'git' @(
+    "$env:ProgramFiles\Git\cmd\git.exe"
+    "$env:LOCALAPPDATA\Programs\Git\cmd\git.exe"
+)
+if (-not $gitPath) {
+    throw '找不到 git（PATH 与常见安装路径均无）。请重新打开终端后重试，或手动安装 Git。'
+}
 
 # 3. 克隆仓库
 if (Test-Path (Join-Path $RepoDir '.git')) {
@@ -56,7 +78,7 @@ elseif (Test-Path $RepoDir) {
 else {
     New-Item -ItemType Directory -Path $RepoDir -Force | Out-Null
     Write-Host "正在克隆: $RepoUrl -> $RepoDir" -ForegroundColor Cyan
-    git clone $RepoUrl $RepoDir
+    & $gitPath clone $RepoUrl $RepoDir
     if ($LASTEXITCODE -ne 0) { throw "克隆失败：$RepoUrl" }
 }
 
