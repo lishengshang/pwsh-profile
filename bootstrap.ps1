@@ -1,4 +1,4 @@
-﻿#Requires -Version 5.1
+#Requires -Version 5.1
 <#
 .SYNOPSIS
     在全新 Windows 机器上从零引导：装 PowerShell 7 → 装 Git → 克隆仓库 → 运行 setup.ps1。
@@ -12,8 +12,12 @@
     克隆目标目录，默认 $HOME\Documents\PowerShell。
 .PARAMETER SkipTools
     透传给 setup.ps1，跳过工具与模块安装。
+.PARAMETER Minimal / Full / Components / SkipComponents
+    透传给 setup.ps1 的组件选择（含义见 setup.ps1；默认 Standard = core+completion+gitui）。
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File bootstrap.ps1
+.EXAMPLE
+    powershell -ExecutionPolicy Bypass -File bootstrap.ps1 -Full
 #>
 param(
     [string]$RepoUrl = 'https://github.com/lishengshang/pwsh-profile.git',
@@ -106,12 +110,14 @@ if (-not (Test-Path $pwshPath)) {
 }
 
 # 透传组件选择参数给 setup.ps1
+# 注意：pwsh -File 下数组参数不会贪心收集后续 token——'-Components','a','b' 只会
+# 绑定 a、丢弃 b。多值参数必须 join 成单个逗号分隔字符串（setup.ps1 侧会拆分）
 $setupArgs = @('-NoProfile', '-File', $setup)
 if ($SkipTools)      { $setupArgs += '-SkipTools' }
 if ($Minimal)        { $setupArgs += '-Minimal' }
 if ($Full)           { $setupArgs += '-Full' }
-if ($Components)     { $setupArgs += '-Components', $Components }
-if ($SkipComponents) { $setupArgs += '-SkipComponents', $SkipComponents }
+if ($Components)     { $setupArgs += '-Components', ($Components -join ',') }
+if ($SkipComponents) { $setupArgs += '-SkipComponents', ($SkipComponents -join ',') }
 & $pwshPath @setupArgs
 
 Write-Host "`n引导完成。请关闭本窗口，打开 Windows Terminal 或新的 PowerShell 7 窗口。" -ForegroundColor Cyan

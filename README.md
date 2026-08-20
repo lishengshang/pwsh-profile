@@ -35,6 +35,7 @@ git clone https://github.com/lishengshang/pwsh-profile.git $HOME\Documents\Power
 > 需要 PowerShell 7+（配置使用 `??`、`?.` 等 PS7 语法）与 Git；winget 需 Windows 10 1809+（自带 App Installer）。Windows PowerShell 5.1 仅用于方式一的引导。
 > 符号链接需要开发者模式或管理员权限，未开启时 `setup.ps1` 自动回退到复制模式；已有配置自动备份到 `backup-<时间戳>` 目录。
 > `starship.toml` 只在 `~/.config/starship.toml` **不存在时**才引入仓库默认——你有自己的主题配置时不会被覆盖。
+> 默认安装 **Standard** 组件集（core + completion + gitui）；要全量（含 Neovim / LazyVim、yazi）用 `.\setup.ps1 -Full`，详见[组件级安装选项](#组件级安装选项)。
 
 ### 装完后手动做 3 件事（每件 1 分钟）
 
@@ -44,7 +45,7 @@ git clone https://github.com/lishengshang/pwsh-profile.git $HOME\Documents\Power
    ```
    然后在 Windows Terminal 设置里把字体换成 `JetBrainsMono Nerd Font Mono`，重开终端生效。
 2. **Windows Terminal 主题**（Solarized Dark 配色 + 半透明）：按 [`windows-terminal/README.md`](windows-terminal/README.md) 把配色加进 settings.json。
-3. **LazyVim 已自动化**：`setup.ps1` 会把 LazyVim starter 引入仓库 `nvim/` 并链接到 `$env:LOCALAPPDATA\nvim`——**首次打开 nvim 时自动安装全部插件**（需要几分钟）。官方文档：<https://www.lazyvim.org/>。
+3. **LazyVim（随 editor 组件安装）**：安装含 `editor` 组件时（如 `.\setup.ps1 -Full` 或 `-Components editor`），`setup.ps1` 会把 LazyVim starter 引入仓库 `nvim/` 并链接到 `$env:LOCALAPPDATA\nvim`——**首次打开 nvim 时自动安装全部插件**（需要几分钟）；默认 Standard 预设不含 editor。官方文档：<https://www.lazyvim.org/>。
 
 装完**新开一个终端**让 winget 注入的 PATH 生效。
 
@@ -143,16 +144,16 @@ powershell.config.json             执行策略 RemoteSigned
 | `files` | yazi 及预览依赖（ffmpeg / jq / poppler / ImageMagick） |
 | `gitui` | lazygit |
 
-预设与显式参数（可组合）：
+预设与显式参数：
 
-- `-Minimal`：仅 `core`
-- `-Full`：全部组件
+- `-Minimal`：仅 `core`（与 `-Full` 互斥）
+- `-Full`：全部组件（与 `-Minimal` 互斥）
 - （默认不指定）：`Standard` = `core` + `completion` + `gitui`
-- `-Components <组件...>`：显式指定（覆盖预设）
-- `-SkipComponents <组件...>`：从结果中剔除
+- `-Components <组件...>`：显式指定（优先于 `-Minimal`/`-Full`；多个组件**必须逗号分隔**，如 `-Components core,gitui`——空格分隔会被解析为位置参数而报错）
+- `-SkipComponents <组件...>`：从解析结果中剔除
 - `-SkipTools`：跳过所有工具/模块下载，仍按所选组件链接外部配置
 
-示例：只装核心与 lazygit → `.\setup.ps1 -Components core,gitui`；最小化且去掉补全 → `.\setup.ps1 -Minimal -SkipComponents completion`。
+示例：只装核心与 lazygit → `.\setup.ps1 -Components core,gitui`；全量但不要编辑器 → `.\setup.ps1 -Full -SkipComponents editor`；默认 Standard 去掉 lazygit → `.\setup.ps1 -SkipComponents gitui`。
 壁纸超分依赖 waifu2x-ncnn-vulkan 不在 winget 自动化内（无稳定包 ID），需手动安装；缺失时 `wallpaper` 自动降级用原图。
 
 ## 依赖工具
@@ -189,7 +190,7 @@ powershell.config.json             执行策略 RemoteSigned
 | PSFzf | （`Install-Module`）| fzf 与 PSReadLine 集成 | - |
 | Terminal-Icons | （`Install-Module`）| eza 缺失时 `ls` 图标兜底 | - |
 
-> 上表可选工具：启动时用 `File.Exists` 遍历 PATH 一次性探测，缺失的工具其别名/函数自动跳过或回退，profile 不会因缺工具而报错。`setup.ps1`（不加 `-SkipTools`）自动安装上表全部工具与模块。
+> 上表可选工具：启动时用 `File.Exists` 遍历 PATH 一次性探测，缺失的工具其别名/函数自动跳过或回退，profile 不会因缺工具而报错。`setup.ps1` 默认安装 Standard 组件集（core + completion + gitui），`-Full` 才安装上表全部工具与模块，粒度见[组件级安装选项](#组件级安装选项)。
 > 更新：命令行工具用 `wup`（winget），PowerShell 模块用 `wum`（`Update-Module`），**更新模块后需新开终端生效**。
 
 ## 常见问题

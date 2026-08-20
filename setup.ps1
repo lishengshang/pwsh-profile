@@ -1,4 +1,4 @@
-﻿#Requires -Version 7
+#Requires -Version 7
 <#
 .SYNOPSIS
     安装 PowerShell profile 到当前用户的 PowerShell 配置目录。
@@ -14,14 +14,19 @@
 .PARAMETER SkipTools
     跳过 winget 工具与 PowerShell 模块的自动安装（仍按所选组件链接外部配置）。
 .PARAMETER Minimal
-    仅安装 core 组件（profile 本体 + 基础命令行工具）。
+    仅安装 core 组件（profile 本体 + 基础命令行工具）。与 -Full 互斥。
 .PARAMETER Full
-    安装全部组件。
+    安装全部组件。与 -Minimal 互斥。
 .PARAMETER Components
-    显式指定要安装的组件（覆盖预设）；可选值见下方"组件"注释。
+    显式指定要安装的组件（覆盖 -Minimal/-Full 预设）；可选值见下方"组件"注释。
+    多个组件用逗号分隔（-Components core,gitui）。
 .PARAMETER SkipComponents
-    从解析出的组件集合中剔除指定组件。
+    从解析出的组件集合中剔除指定组件（同样逗号分隔）。
 #>
+# CmdletBinding(PositionalBinding=$false)：禁止位置绑定。否则 "-Components core gitui"
+# 的 gitui 会被位置绑定到 SkipComponents——语义反转为"剔除 gitui"且无任何告警，必须报错。
+# 注意：该特性必须放在 param() 上方才生效（放 param() 内部时 PositionalBinding 不起作用）。
+[CmdletBinding(PositionalBinding = $false)]
 param(
     [switch]$SkipTools,
     [switch]$Minimal,
@@ -36,17 +41,34 @@ $ErrorActionPreference = 'Stop'
 # 组件决定"下载哪些工具/模块、链接哪些外部配置"。profile 本体（Core 条目）始终部署；
 # 运行时所有外部工具引用都被 $global:__Tools.ContainsKey 守卫，未安装的工具自动优雅
 # 降级（对应别名/函数不创建），故安装阶段不装即等于运行时缺失，无需改 profile 代码。
-#   -Components <组件>      显式指定要安装的组件（覆盖预设）
+#   -Components <组件>      显式指定要安装的组件（覆盖 -Minimal/-Full 预设）
 #   -SkipComponents <组件>  从解析结果中剔除
 #   -Minimal = core；-Full = 全部；（默认/无开关 = Standard: core+completion+gitui）
 $allComponents      = 'core', 'completion', 'editor', 'files', 'gitui'
 $standardComponents = 'core', 'completion', 'gitui'
 
+# 容忍逗号分隔的单 token：pwsh -File 下数组参数不会贪心收集后续参数，
+# "-Components core,gitui" 会整体作为单个字符串传入；交互式会话里两种写法
+# 都已是数组，按逗号再拆一次是无害的幂等操作。
+function __NormalizeComponents ([string[]]$List) {
+    @($List | ForEach-Object { $_ -split '\s*,\s*' } | Where-Object { $_ })
+}
+
+if ($Minimal -and $Full) {
+    throw '-Minimal 与 -Full 互斥，请只选其一（或改用 -Components 显式指定）。'
+}
+$Components     = __NormalizeComponents $Components
+$SkipComponents = __NormalizeComponents $SkipComponents
 if ($Components) {
     $effectiveComponents = @($Components | Where-Object { $_ -in $allComponents })
     $unknown = @($Components | Where-Object { $_ -notin $allComponents })
     if ($unknown) {
         Write-Warning "未知组件将被忽略: $($unknown -join ', ')（合法值: $($allComponents -join ', ')）"
+    }
+    # 显式指定却全部无效，几乎必然是调用方式/拼写错误——静默空集会让用户
+    # 误以为装好了，必须终止
+    if (-not $effectiveComponents) {
+        throw "-Components 未包含任何合法组件（收到: $($Components -join ', ')；合法值: $($allComponents -join ', ')）。"
     }
 } elseif ($Minimal) {
     $effectiveComponents = @('core')
@@ -56,7 +78,14 @@ if ($Components) {
     $effectiveComponents = @($standardComponents)
 }
 if ($SkipComponents) {
+    $unknownSkip = @($SkipComponents | Where-Object { $_ -notin $allComponents })
+    if ($unknownSkip) {
+        Write-Warning "SkipComponents 中的未知组件将被忽略: $($unknownSkip -join ', ')（合法值: $($allComponents -join ', ')）"
+    }
     $effectiveComponents = @($effectiveComponents | Where-Object { $_ -notin $SkipComponents })
+    if (-not $effectiveComponents) {
+        throw "-SkipComponents（$($SkipComponents -join ', ')）剔除了全部组件，没有可安装的内容。"
+    }
 }
 $effectiveComponents = @($effectiveComponents | Select-Object -Unique)
 Write-Host "安装组件: $($effectiveComponents -join ', ')" -ForegroundColor Cyan
@@ -71,6 +100,12 @@ $backupDir = Join-Path $profileDir "backup-$(Get-Date -Format 'yyyyMMdd-HHmmss')
 #   SkipIfExists：目标已存在时不动它（用户自己的配置优先），仅缺失时引入仓库默认。
 $linkItems = @(. (Join-Path $repoDir 'Scripts\Get-ManagedLinks.ps1'))
 # 按组件选择过滤外部配置；Core 条目是 profile 本体，始终部署
+# 防呆：既非 Core 又无合法 Component 的条目会被静默跳过，提前告警（同 $wingetTools）
+foreach ($l in $linkItems) {
+    if (-not $l.Core -and $l.Component -notin $allComponents) {
+        Write-Warning "链接条目 '$($l.Source)' 既非 Core 也无合法 Component，它不会被链接——请修正 Get-ManagedLinks.ps1。"
+    }
+}
 $linkItems = @($linkItems | Where-Object { $_.Core -or ($effectiveComponents -contains $_.Component) })
 
 # winget 工具清单（与 README「依赖工具」表保持一致）
@@ -101,6 +136,13 @@ $wingetTools = @(
     @{ Name = 'lazygit';   Id = 'JesseDuffield.lazygit';              Component = 'gitui' }
     @{ Name = 'WinLibs gcc'; Id = 'BrechtSanders.WinLibs.POSIX.UCRT'; Component = 'editor' }
 )
+# 防呆：缺 Component 标注（或值非法）的条目会被组件过滤静默跳过、永不安装，
+# 提前显式告警，避免"加了工具却怎么都装不上"的排查成本
+foreach ($t in $wingetTools) {
+    if (-not $t.Component -or $t.Component -notin $allComponents) {
+        Write-Warning "工具 '$($t.Name)' 的 Component 标注缺失或非法（$($t.Component)），它不会被安装——请修正清单。"
+    }
+}
 
 # 链接注册表（机器本地状态，不入库）：登记 setup 创建/发现的受管目标，
 # Repair-ConfigLinks.ps1 的修复依据。读写函数单源在 Scripts/LinkRegistry.ps1
