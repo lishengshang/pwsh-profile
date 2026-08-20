@@ -5,17 +5,61 @@
 .DESCRIPTION
     1. 通过符号链接把仓库中的 profile 文件映射到 $PROFILE 所在目录
        （符号链接需要管理员权限或开发者模式，否则回退到复制模式）。
-    2. 默认用 winget 安装全部依赖工具、Install-Module 安装 PSCompletions/PSFzf，
-       加 -SkipTools 可跳过（工具均为可选依赖，缺失时 profile 自动降级）。
+    2. 默认按 Standard 组件用 winget 安装依赖工具、Install-Module 安装模块；
+       加 -SkipTools 可跳过下载（工具均为可选依赖，缺失时 profile 自动降级）。
     仓库目录本身即 $PROFILE 目录时（本机直用仓库），自动跳过文件链接，只装工具。
+    组件选择决定"下载哪些工具/模块、链接哪些外部配置"：profile 本体（Core）始终
+    部署，运行时所有外部工具引用都被 $global:__Tools.ContainsKey 守卫，未安装的
+    工具自动优雅降级（对应别名/函数不创建）。
 .PARAMETER SkipTools
-    跳过 winget 工具与 PowerShell 模块的自动安装。
+    跳过 winget 工具与 PowerShell 模块的自动安装（仍按所选组件链接外部配置）。
+.PARAMETER Minimal
+    仅安装 core 组件（profile 本体 + 基础命令行工具）。
+.PARAMETER Full
+    安装全部组件。
+.PARAMETER Components
+    显式指定要安装的组件（覆盖预设）；可选值见下方"组件"注释。
+.PARAMETER SkipComponents
+    从解析出的组件集合中剔除指定组件。
 #>
 param(
-    [switch]$SkipTools
+    [switch]$SkipTools,
+    [switch]$Minimal,
+    [switch]$Full,
+    [string[]]$Components,
+    [string[]]$SkipComponents
 )
 
 $ErrorActionPreference = 'Stop'
+
+# ================= 组件选择（多级别下载/安装粒度）=================
+# 组件决定"下载哪些工具/模块、链接哪些外部配置"。profile 本体（Core 条目）始终部署；
+# 运行时所有外部工具引用都被 $global:__Tools.ContainsKey 守卫，未安装的工具自动优雅
+# 降级（对应别名/函数不创建），故安装阶段不装即等于运行时缺失，无需改 profile 代码。
+#   -Components <组件>      显式指定要安装的组件（覆盖预设）
+#   -SkipComponents <组件>  从解析结果中剔除
+#   -Minimal = core；-Full = 全部；（默认/无开关 = Standard: core+completion+gitui）
+$allComponents      = 'core', 'completion', 'editor', 'files', 'gitui'
+$standardComponents = 'core', 'completion', 'gitui'
+
+if ($Components) {
+    $effectiveComponents = @($Components | Where-Object { $_ -in $allComponents })
+    $unknown = @($Components | Where-Object { $_ -notin $allComponents })
+    if ($unknown) {
+        Write-Warning "未知组件将被忽略: $($unknown -join ', ')（合法值: $($allComponents -join ', ')）"
+    }
+} elseif ($Minimal) {
+    $effectiveComponents = @('core')
+} elseif ($Full) {
+    $effectiveComponents = @($allComponents)
+} else {
+    $effectiveComponents = @($standardComponents)
+}
+if ($SkipComponents) {
+    $effectiveComponents = @($effectiveComponents | Where-Object { $_ -notin $SkipComponents })
+}
+$effectiveComponents = @($effectiveComponents | Select-Object -Unique)
+Write-Host "安装组件: $($effectiveComponents -join ', ')" -ForegroundColor Cyan
 
 $repoDir = [System.IO.Path]::GetFullPath($PSScriptRoot).TrimEnd('\')
 $profileDir = [System.IO.Path]::GetFullPath((Split-Path $PROFILE)).TrimEnd('\')
@@ -26,28 +70,36 @@ $backupDir = Join-Path $profileDir "backup-$(Get-Date -Format 'yyyyMMdd-HHmmss')
 #   外部条目（starship/lazygit/yazi/nvim）即使仓库即 $PROFILE 目录也照常链接；
 #   SkipIfExists：目标已存在时不动它（用户自己的配置优先），仅缺失时引入仓库默认。
 $linkItems = @(. (Join-Path $repoDir 'Scripts\Get-ManagedLinks.ps1'))
+# 按组件选择过滤外部配置；Core 条目是 profile 本体，始终部署
+$linkItems = @($linkItems | Where-Object { $_.Core -or ($effectiveComponents -contains $_.Component) })
 
 # winget 工具清单（与 README「依赖工具」表保持一致）
+# 每项标注 Component：决定它属于哪个安装组件（多级别下载粒度的依据）。
+#   core      基础 shell 与开发工具
+#   completion 命令补全（PSFzf 依赖 fzf）
+#   editor     Neovim / LazyVim（+ treesitter 编译器）
+#   files      yazi 及其预览依赖
+#   gitui      lazygit 终端 git UI
 $wingetTools = @(
-    @{ Name = 'Starship'; Id = 'Starship.Starship' }
-    @{ Name = 'eza';      Id = 'eza-community.eza' }
-    @{ Name = 'zoxide';   Id = 'ajeetdsouza.zoxide' }
-    @{ Name = 'ripgrep';  Id = 'BurntSushi.ripgrep.MSVC' }
-    @{ Name = 'fd';       Id = 'sharkdp.fd' }
-    @{ Name = 'bat';      Id = 'sharkdp.bat' }
-    @{ Name = '7-Zip';    Id = '7zip.7zip' }
-    @{ Name = 'fzf';      Id = 'junegunn.fzf' }
-    @{ Name = 'fnm';      Id = 'Schniz.fnm' }
-    @{ Name = 'Neovim';   Id = 'Neovim.Neovim' }
+    @{ Name = 'Starship'; Id = 'Starship.Starship';                    Component = 'core' }
+    @{ Name = 'eza';      Id = 'eza-community.eza';                    Component = 'core' }
+    @{ Name = 'zoxide';   Id = 'ajeetdsouza.zoxide';                   Component = 'core' }
+    @{ Name = 'ripgrep';  Id = 'BurntSushi.ripgrep.MSVC';              Component = 'core' }
+    @{ Name = 'fd';       Id = 'sharkdp.fd';                           Component = 'core' }
+    @{ Name = 'bat';      Id = 'sharkdp.bat';                          Component = 'core' }
+    @{ Name = '7-Zip';    Id = '7zip.7zip';                            Component = 'core' }
+    @{ Name = 'fnm';      Id = 'Schniz.fnm';                           Component = 'core' }
+    @{ Name = 'fzf';      Id = 'junegunn.fzf';                         Component = 'completion' }
+    @{ Name = 'Neovim';   Id = 'Neovim.Neovim';                        Component = 'editor' }
     # Yazi 及其预览依赖
-    @{ Name = 'Yazi';         Id = 'sxyazi.yazi' }
-    @{ Name = 'ffmpeg';       Id = 'Gyan.FFmpeg' }
-    @{ Name = 'jq';           Id = 'jqlang.jq' }
-    @{ Name = 'poppler';      Id = 'oschwartz10612.Poppler' }
-    @{ Name = 'ImageMagick';  Id = 'ImageMagick.ImageMagick' }
+    @{ Name = 'Yazi';         Id = 'sxyazi.yazi';                      Component = 'files' }
+    @{ Name = 'ffmpeg';       Id = 'Gyan.FFmpeg';                      Component = 'files' }
+    @{ Name = 'jq';           Id = 'jqlang.jq';                        Component = 'files' }
+    @{ Name = 'poppler';      Id = 'oschwartz10612.Poppler';           Component = 'files' }
+    @{ Name = 'ImageMagick';  Id = 'ImageMagick.ImageMagick';          Component = 'files' }
     # lazygit（终端 git UI）与 LazyVim 的 treesitter 编译器
-    @{ Name = 'lazygit';   Id = 'JesseDuffield.lazygit' }
-    @{ Name = 'WinLibs gcc'; Id = 'BrechtSanders.WinLibs.POSIX.UCRT' }
+    @{ Name = 'lazygit';   Id = 'JesseDuffield.lazygit';              Component = 'gitui' }
+    @{ Name = 'WinLibs gcc'; Id = 'BrechtSanders.WinLibs.POSIX.UCRT'; Component = 'editor' }
 )
 
 # 链接注册表（机器本地状态，不入库）：登记 setup 创建/发现的受管目标，
@@ -121,7 +173,7 @@ function Install-DepTools {
         return
     }
 
-    foreach ($tool in $wingetTools) {
+    foreach ($tool in @($wingetTools | Where-Object { $effectiveComponents -contains $_.Component })) {
         # 幂等：已安装则跳过（winget list 无匹配时输出为空）
         $installed = winget list --id $tool.Id --exact --accept-source-agreements 2>$null |
             Select-String -Pattern ([regex]::Escape($tool.Id)) -Quiet
@@ -193,7 +245,10 @@ function Install-PwshModules {
         Install-PackageProvider -Name NuGet -Force -Scope CurrentUser | Out-Null
     }
 
-    $need = 'PSCompletions', 'PSFzf', 'Terminal-Icons' | Where-Object { -not (Get-Module -ListAvailable -Name $_) }
+    $need = @()
+    if ($effectiveComponents -contains 'completion') { $need += 'PSCompletions', 'PSFzf' }
+    if ($effectiveComponents -contains 'core')       { $need += 'Terminal-Icons' }
+    $need = @($need | Where-Object { -not (Get-Module -ListAvailable -Name $_) })
     if (-not $need) {
         Write-Host '已安装: PSCompletions / PSFzf / Terminal-Icons' -ForegroundColor DarkGray
         return
@@ -221,8 +276,8 @@ if (-not $useSymlink) {
     Write-Warning '当前环境不支持符号链接（需管理员权限或开发者模式），目录将回退 Junction、文件回退 HardLink，仍失败才复制。'
 }
 
-# 链接必须在 Initialize-LazyVim 之后建立（nvim/ 目录要先存在）
-Initialize-LazyVim
+# 链接必须在 Initialize-LazyVim 之后建立（nvim/ 目录要先存在）；仅 editor 组件引入
+if ($effectiveComponents -contains 'editor') { Initialize-LazyVim }
 
 $backupCreated = $false
 $copyDeployed = $false
@@ -325,7 +380,7 @@ if ($SkipTools) {
 }
 else {
     Install-DepTools
-    Install-YaziFlavor
+    if ($effectiveComponents -contains 'files') { Install-YaziFlavor }
     Install-PwshModules
     Write-Host "`n依赖安装完成。请重新打开终端让 winget 注入的 PATH 生效。" -ForegroundColor Cyan
 }

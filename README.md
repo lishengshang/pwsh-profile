@@ -131,6 +131,30 @@ powershell.config.json             执行策略 RemoteSigned
 
 > **想自定义？** 本仓库只做"接线"：提示符 → [Starship 官方文档](https://starship.rs)；模糊查找 → [fzf](https://github.com/junegunn/fzf) / [PSFzf](https://github.com/psfzf/PSFzf)；命令补全 → [PSCompletions](https://github.com/abgox/PSCompletions)；编辑器 → [LazyVim](https://www.lazyvim.org/)；终端 → [Windows Terminal](https://github.com/microsoft/terminal)。
 
+### 组件级安装选项
+
+`setup.ps1` 支持按**组件**选择下载/安装的粒度。profile 本体（Core）始终部署；未安装的工具在运行时自动优雅降级（对应别名/函数不创建），所以"选择组件"即"选择装哪些、不装哪些"，无需改 profile 代码。
+
+| 组件 | 包含内容 |
+|---|---|
+| `core` | profile 本体、starship、eza、zoxide、ripgrep、fd、bat、7-Zip、fnm、Terminal-Icons |
+| `completion` | PSCompletions、PSFzf（依赖 fzf） |
+| `editor` | Neovim + LazyVim（含 WinLibs gcc，供 treesitter 编译） |
+| `files` | yazi 及预览依赖（ffmpeg / jq / poppler / ImageMagick） |
+| `gitui` | lazygit |
+
+预设与显式参数（可组合）：
+
+- `-Minimal`：仅 `core`
+- `-Full`：全部组件
+- （默认不指定）：`Standard` = `core` + `completion` + `gitui`
+- `-Components <组件...>`：显式指定（覆盖预设）
+- `-SkipComponents <组件...>`：从结果中剔除
+- `-SkipTools`：跳过所有工具/模块下载，仍按所选组件链接外部配置
+
+示例：只装核心与 lazygit → `.\setup.ps1 -Components core,gitui`；最小化且去掉补全 → `.\setup.ps1 -Minimal -SkipComponents completion`。
+壁纸超分依赖 waifu2x-ncnn-vulkan 不在 winget 自动化内（无稳定包 ID），需手动安装；缺失时 `wallpaper` 自动降级用原图。
+
 ## 依赖工具
 
 ### 必需依赖

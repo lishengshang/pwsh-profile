@@ -15,7 +15,7 @@ profile/psreadline.ps1             PSReadLine 配置
 profile/modules.ps1                zoxide 懒加载；PSCompletions / PSFzf
 profile/aliases.ps1                全部别名与函数
 profile/startup.ps1                启动信息
-setup.ps1                          一键安装（符号链接 + winget 工具 + Install-Module）
+setup.ps1                          一键安装（符号链接 + winget 工具 + Install-Module；支持 -Minimal/-Full/-Components 组件级选择）
 bootstrap.ps1                      全新系统引导（装 pwsh/git → 克隆 → setup）
 starship.toml                      提示符主题（SkipIfExists 链接到 ~/.config/）
 lazygit/config.yml                 lazygit 主题 Solarized Dark（链接到 %APPDATA%\lazygit\）
@@ -36,9 +36,10 @@ Mason LSP、treesitter 产物在各设备 `$env:LOCALAPPDATA\nvim-data` 自动�
    （`aliases.ps1` 的 `__Ensure-TerminalIcons`）、缓存（`init-cache.ps1`）。新工具探测
    一律走入口文件的 `File.Exists` 循环，不要用 `Get-Command`。
 2. **三处同步**：新增/移除外部工具时，以下三处必须同时改，缺一不可：
-   - `setup.ps1` 的 `$wingetTools` 列表
-   - `README.md` 的「依赖工具」表
+   - `setup.ps1` 的 `$wingetTools` 列表（**并标注 `Component`**，决定它属于哪个安装组件）
+   - `README.md` 的「依赖工具」表与「组件级安装选项」小节
    - 若 profile 需要探测：入口文件的工具名循环
+   - 外部配置（starship/lazygit/yazi/nvim）的组件归属在 `Scripts/Get-ManagedLinks.ps1` 的 `Component` 字段
 
    新增命令别名/函数时同步更新 `README.md` 使用速查表。
    全部管理链接（核心 profile 文件 + starship/lazygit/yazi/nvim 外部配置）的清单

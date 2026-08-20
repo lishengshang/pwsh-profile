@@ -18,7 +18,11 @@
 param(
     [string]$RepoUrl = 'https://github.com/lishengshang/pwsh-profile.git',
     [string]$RepoDir = (Join-Path $HOME 'Documents\PowerShell'),
-    [switch]$SkipTools
+    [switch]$SkipTools,
+    [switch]$Minimal,
+    [switch]$Full,
+    [string[]]$Components,
+    [string[]]$SkipComponents
 )
 
 $ErrorActionPreference = 'Stop'
@@ -101,11 +105,13 @@ if (-not (Test-Path $pwshPath)) {
     return
 }
 
-if ($SkipTools) {
-    & $pwshPath -NoProfile -File $setup -SkipTools
-}
-else {
-    & $pwshPath -NoProfile -File $setup
-}
+# 透传组件选择参数给 setup.ps1
+$setupArgs = @('-NoProfile', '-File', $setup)
+if ($SkipTools)      { $setupArgs += '-SkipTools' }
+if ($Minimal)        { $setupArgs += '-Minimal' }
+if ($Full)           { $setupArgs += '-Full' }
+if ($Components)     { $setupArgs += '-Components', $Components }
+if ($SkipComponents) { $setupArgs += '-SkipComponents', $SkipComponents }
+& $pwshPath @setupArgs
 
 Write-Host "`n引导完成。请关闭本窗口，打开 Windows Terminal 或新的 PowerShell 7 窗口。" -ForegroundColor Cyan
