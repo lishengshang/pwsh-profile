@@ -42,9 +42,12 @@ if (-not $env:EDITOR -and $global:__Tools.ContainsKey('nvim')) {
 # 位置（系统级/用户级安装路径不同），找到后设置 YAZI_FILE_ONE 指向完整路径
 # ——MSYS DLL 与 exe 同目录，yazi 直接调起即可，无需 Git Bash 环境。
 if (-not $env:YAZI_FILE_ONE -and $global:__Tools.ContainsKey('yazi')) {
-    # git 用入口 File.Exists 探测结果（启动路径禁用 Get-Command，见 AGENTS.md）
+    # git 用入口 File.Exists 探测结果（启动路径禁用 Get-Command，见 AGENTS.md）。
+    # 注意：不能用 ?. 取值（PS7 专属语法，5.1 兼容模式会解析失败）
+    $_gitFromTools = $null
+    if ($global:__Tools.ContainsKey('git')) { $_gitFromTools = $global:__Tools['git'].Source }
     foreach ($_git in @(
-        $global:__Tools['git']?.Source
+        $_gitFromTools
         "$env:ProgramFiles\Git\cmd\git.exe"
         "$env:LOCALAPPDATA\Programs\Git\cmd\git.exe"
     )) {
