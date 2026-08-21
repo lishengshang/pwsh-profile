@@ -32,7 +32,7 @@ git clone https://github.com/lishengshang/pwsh-profile.git $HOME\Documents\Power
 .\setup.ps1
 ```
 
-> 需要 PowerShell 7+（配置使用 `??`、`?.` 等 PS7 语法）与 Git；winget 需 Windows 10 1809+（自带 App Installer）。Windows PowerShell 5.1 仅用于方式一的引导。
+> 推荐 PowerShell 7+（完整体验）；Windows PowerShell 5.1 也能以兼容模式加载配置（部分功能精简，见「常见问题」）。需要 Git；winget 需 Windows 10 1809+（自带 App Installer）。机器上只有自带 5.1 时直接执行方式一即可，会自动装好 pwsh 7。
 > 符号链接需要开发者模式或管理员权限，未开启时 `setup.ps1` 自动回退到复制模式；已有配置自动备份到 `backup-<时间戳>` 目录。
 > `starship.toml` 只在 `~/.config/starship.toml` **不存在时**才引入仓库默认——你有自己的主题配置时不会被覆盖。
 > 默认安装 **Standard** 组件集（core + completion + gitui）；要全量（含 Neovim / LazyVim、yazi）用 `.\setup.ps1 -Full`，详见[组件级安装选项](#组件级安装选项)。
@@ -166,7 +166,7 @@ powershell.config.json             执行策略 RemoteSigned
 
 | 工具 | 用途 | 备注 |
 |---|---|---|
-| PowerShell 7+ | 运行时（`?.` 等 PS7 语法） | `bootstrap.ps1` 自动安装 |
+| PowerShell 7+ | 完整体验的运行时（5.1 可兼容模式降级使用） | `bootstrap.ps1` 自动安装 |
 | Git | `psync` 同步、bootstrap 克隆、LazyVim starter 引入；yazi 的 MIME 检测也用其自带的 `file.exe`（`YAZI_FILE_ONE` 自动探测） | `bootstrap.ps1` 自动安装 |
 
 ### 可选工具（缺失时自动降级）
@@ -226,9 +226,11 @@ PSCompletions 用全局变量 `$PSCompletions` + 固定 guid 判断是否已初�
 
 ### 支持 Windows PowerShell 5.1 吗？
 
-不支持，且不需要手动做任何事来"隔离"：5.1 的 profile 目录是 `Documents\WindowsPowerShell\`，本仓库部署在 `Documents\PowerShell\`（PS7 专属），5.1 天然加载不到。5.1 的正确角色只有一个——**引导**：在仓库目录执行 `.\bootstrap.ps1`，它会装好 pwsh 7 并完成全部配置。
+支持，以功能精简的「兼容模式」：全部脚本语法保持 5.1 可解析（不使用 `?.` / `??` 等 PS7 新语法），入口守卫在 5.1 下不再退出，而是加载可用功能子集（别名/函数、PSReadLine 基础配置、starship/eza/zoxide 等已装工具），启动时显示兼容提示。差异与建议：
 
-万一误把此配置链接给了 5.1（如手动复制 profile 文件），入口的版本守卫会提示"需要 PowerShell 7+"并直接退出，不会出现满屏解析错误。
+- 完整体验（性能优化与新特性）以 PowerShell 7+ 为准；装 PS7 只需在仓库目录执行 `.\bootstrap.ps1`（或方式一）。
+- 5.1 的 profile 目录是 `Documents\WindowsPowerShell\`，本仓库默认部署在 `Documents\PowerShell\`（PS7 专属），两者天然互不影响；兼容模式只在你把 5.1 指到本仓库入口文件时生效。
+- 仅为 PS7 安装的模块（如 PSCompletions / PSFzf）在 5.1 下探测不到时自动跳过，不会报错。
 
 ### yazi 提示 `Cannot find 'file' to detect the file's MIME type`？
 
