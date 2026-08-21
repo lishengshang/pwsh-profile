@@ -53,8 +53,10 @@ Mason LSP、treesitter 产物在各设备 `$env:LOCALAPPDATA\nvim-data` 自动�
    `$global:__Tools.ContainsKey('<name>')` 判断，缺失时回退内置命令或静默跳过，
    profile 不得因缺工具报错。
 4. **兼容性**：PowerShell 7+ 是主力支持版本；Windows PowerShell 5.1
-   为兼容模式（降级加载）。因此所有脚本必须保持 5.1 可解析：禁用
-   `?.` / `??` / 三元等 PS7 新语法，可选依赖缺失时优雅降级。
+   为兼容模式（降级加载，setup/bootstrap/向导全链路 5.1 可运行）。因此
+   所有脚本必须保持 5.1 可解析：禁用 `?.` / `??` / 三元等 PS7 新语法；
+   `.ps1` 一律保存为 UTF-8 **带 BOM**（无 BOM 时 5.1 按 ANSI/GBK 误读，
+   中文注释会破坏解析）；可选依赖缺失时优雅降级。
 5. **`setup.ps1` 幂等**：已安装的工具/模块、已存在的链接必须跳过，重复运行无副作用。
 6. **风格**：注释和文档用中文；别名简短小写（`gs`/`wup`），函数避免未批准动词；
    commit message 用中文、前缀分类（`profile:` / `setup:` / `docs:` / `修复:` 等，见 git log）。

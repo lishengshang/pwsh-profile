@@ -32,7 +32,7 @@ git clone https://github.com/lishengshang/pwsh-profile.git $HOME\Documents\Power
 .\setup.ps1
 ```
 
-> 推荐 PowerShell 7+（完整体验）；Windows PowerShell 5.1 也能以兼容模式加载配置（部分功能精简，见「常见问题」）。需要 Git；winget 需 Windows 10 1809+（自带 App Installer）。机器上只有自带 5.1 时直接执行方式一即可，会自动装好 pwsh 7。
+> 推荐 PowerShell 7+（完整体验）；Windows PowerShell 5.1 也能以兼容模式使用全套配置——安装引导、交互式向导与 profile 加载全链路可用（差异见「常见问题」）。需要 Git；winget 需 Windows 10 1809+（自带 App Installer）。机器上只有自带 5.1 时直接执行方式一即可：引导时会询问是否顺便装 pwsh 7（推荐），不装则以 5.1 兼容模式完成部署。
 > 符号链接需要开发者模式或管理员权限，未开启时 `setup.ps1` 自动回退到复制模式；已有配置自动备份到 `backup-<时间戳>` 目录。
 > `starship.toml` 只在 `~/.config/starship.toml` **不存在时**才引入仓库默认——你有自己的主题配置时不会被覆盖。
 > 默认安装 **Standard** 组件集（core + completion + gitui）；要全量（含 Neovim / LazyVim、yazi）用 `.\setup.ps1 -Full`，详见[组件级安装选项](#组件级安装选项)。
@@ -166,7 +166,7 @@ powershell.config.json             执行策略 RemoteSigned
 
 | 工具 | 用途 | 备注 |
 |---|---|---|
-| PowerShell 7+ | 完整体验的运行时（5.1 可兼容模式降级使用） | `bootstrap.ps1` 自动安装 |
+| PowerShell 7+ | 完整体验的运行时（5.1 可兼容模式使用） | `bootstrap.ps1` 询问后安装 |
 | Git | `psync` 同步、bootstrap 克隆、LazyVim starter 引入；yazi 的 MIME 检测也用其自带的 `file.exe`（`YAZI_FILE_ONE` 自动探测） | `bootstrap.ps1` 自动安装 |
 
 ### 可选工具（缺失时自动降级）
@@ -226,11 +226,11 @@ PSCompletions 用全局变量 `$PSCompletions` + 固定 guid 判断是否已初�
 
 ### 支持 Windows PowerShell 5.1 吗？
 
-支持，以功能精简的「兼容模式」：全部脚本语法保持 5.1 可解析（不使用 `?.` / `??` 等 PS7 新语法），入口守卫在 5.1 下不再退出，而是加载可用功能子集（别名/函数、PSReadLine 基础配置、starship/eza/zoxide 等已装工具），启动时显示兼容提示。差异与建议：
+支持，**安装与使用全链路可用**（兼容模式）：`bootstrap.ps1` / `setup.ps1`（含交互式向导）可直接在 5.1 下运行，部署目标按运行时 `$PROFILE` 自动解析到 `Documents\WindowsPowerShell\`，与 PS7 的部署（`Documents\PowerShell\`）互不影响；profile 入口在 5.1 下显示兼容提示后加载功能子集（别名/函数、PSReadLine、starship/eza/zoxide 等已装工具）。细节与边界：
 
-- 完整体验（性能优化与新特性）以 PowerShell 7+ 为准；装 PS7 只需在仓库目录执行 `.\bootstrap.ps1`（或方式一）。
-- 5.1 的 profile 目录是 `Documents\WindowsPowerShell\`，本仓库默认部署在 `Documents\PowerShell\`（PS7 专属），两者天然互不影响；兼容模式只在你把 5.1 指到本仓库入口文件时生效。
-- 仅为 PS7 安装的模块（如 PSCompletions / PSFzf）在 5.1 下探测不到时自动跳过，不会报错。
+- 全部脚本语法保持 5.1 可解析（不使用 `?.` / `??` 等 PS7 新语法，`.ps1` 一律 UTF-8 带 BOM——无 BOM 会被 5.1 按 ANSI/GBK 误读）。
+- 5.1 默认执行策略 Restricted 时，`setup.ps1` 自动将当前用户放开为 RemoteSigned；模块（PSCompletions / PSFzf / Terminal-Icons）安装进 5.1 自己的模块目录，PS7 侧不受影响。
+- 完整体验（性能优化与新特性）以 PowerShell 7+ 为准；随时可在仓库目录执行 `.\bootstrap.ps1` 补装 pwsh 7。只想在 5.1 部署、跳过 PS7 安装询问：`powershell -ExecutionPolicy Bypass -File bootstrap.ps1 -SkipPwsh`。
 
 ### yazi 提示 `Cannot find 'file' to detect the file's MIME type`？
 

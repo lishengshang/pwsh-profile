@@ -8,7 +8,11 @@
     @{ Source = 'Microsoft.PowerShell_profile.ps1'; Target = $PROFILE; Core = $true }
     @{ Source = 'profile'; Target = Join-Path (Split-Path $PROFILE) 'profile'; Core = $true }
     @{ Source = 'Scripts'; Target = Join-Path (Split-Path $PROFILE) 'Scripts'; Core = $true }
-    @{ Source = 'powershell.config.json'; Target = Join-Path (Split-Path $PROFILE) 'powershell.config.json'; Core = $true }
+    # powershell.config.json 仅 pwsh 7 读取（5.1 不认 $PROFILE 目录下的该文件，
+    # 部署过去只是死文件），故仅 PS7 下纳入清单
+    if ($PSVersionTable.PSVersion.Major -ge 7) {
+        @{ Source = 'powershell.config.json'; Target = Join-Path (Split-Path $PROFILE) 'powershell.config.json'; Core = $true }
+    }
     # ---- 外部配置：按组件选择部署（SkipIfExists 仍生效：用户自有配置优先） ----
     @{ Source = 'starship.toml'; Target = Join-Path $HOME '.config\starship.toml'; Component = 'core'; SkipIfExists = $true }
     @{ Source = 'lazygit\config.yml'; Target = Join-Path $env:APPDATA 'lazygit\config.yml'; Component = 'gitui'; SkipIfExists = $true }
