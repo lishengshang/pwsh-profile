@@ -7,6 +7,8 @@
        （符号链接需要管理员权限或开发者模式，否则回退到复制模式）。
     2. 默认按 Standard 组件用 winget 安装依赖工具、Install-Module 安装模块；
        加 -SkipTools 可跳过下载（工具均为可选依赖，缺失时 profile 自动降级）。
+    3. 无显式组件参数且处于交互终端时，先进入安装向导
+       （简介 → 组件勾选 → 工具预览/剔除 → 确认）；-Yes 或非交互环境自动跳过。
     仓库目录本身即 $PROFILE 目录时（本机直用仓库），自动跳过文件链接，只装工具。
     组件选择决定"下载哪些工具/模块、链接哪些外部配置"：profile 本体（Core）始终
     部署，运行时所有外部工具引用都被 $global:__Tools.ContainsKey 守卫，未安装的
@@ -22,6 +24,13 @@
     多个组件用逗号分隔（-Components core,gitui）。
 .PARAMETER SkipComponents
     从解析出的组件集合中剔除指定组件（同样逗号分隔）。
+.PARAMETER Yes
+    跳过交互式向导与确认，完全非交互安装（脚本 / CI 调用用；等价旧行为）。
+.PARAMETER Wizard
+    强制进入交互式向导（仅当未指定任何组件参数时生效；优先于 -Yes）。
+.PARAMETER ExcludeTools
+    按名称剔除不想安装的工具（如 fnm,ffmpeg；逗号分隔）。仅影响工具安装，
+    对应功能运行时自动降级，不影响 profile 本体。
 #>
 # CmdletBinding(PositionalBinding=$false)：禁止位置绑定。否则 "-Components core gitui"
 # 的 gitui 会被位置绑定到 SkipComponents——语义反转为"剔除 gitui"且无任何告警，必须报错。
@@ -32,7 +41,10 @@ param(
     [switch]$Minimal,
     [switch]$Full,
     [string[]]$Components,
-    [string[]]$SkipComponents
+    [string[]]$SkipComponents,
+    [switch]$Yes,
+    [switch]$Wizard,
+    [string[]]$ExcludeTools
 )
 
 $ErrorActionPreference = 'Stop'
@@ -74,7 +86,16 @@ if ($Components) {
     $effectiveComponents = @('core')
 } elseif ($Full) {
     $effectiveComponents = @($allComponents)
+} elseif ($SkipComponents) {
+    # 只给了 -SkipComponents：视为显式选择（基于 Standard 剔除，不进向导），
+    # 后续 SkipComponents 过滤块会应用并在剔空时报错
+    $effectiveComponents = @($standardComponents)
 } else {
+    # 无显式组件参数：交互终端进入向导（-Wizard 可强制、优先于 -Yes）；
+    # -Yes 或 stdin 被重定向（CI/管道）时保持原全自动行为（Standard）。
+    # 向导展示需要 $wingetTools，实际执行推迟到工具清单定义之后（$pendingWizard）。
+    $interactive   = [Environment]::UserInteractive -and -not [Console]::IsInputRedirected
+    $pendingWizard = $Wizard -or ($interactive -and -not $Yes)
     $effectiveComponents = @($standardComponents)
 }
 if ($SkipComponents) {
@@ -88,7 +109,6 @@ if ($SkipComponents) {
     }
 }
 $effectiveComponents = @($effectiveComponents | Select-Object -Unique)
-Write-Host "安装组件: $($effectiveComponents -join ', ')" -ForegroundColor Cyan
 
 $repoDir = [System.IO.Path]::GetFullPath($PSScriptRoot).TrimEnd('\')
 $profileDir = [System.IO.Path]::GetFullPath((Split-Path $PROFILE)).TrimEnd('\')
@@ -116,25 +136,27 @@ $linkItems = @($linkItems | Where-Object { $_.Core -or ($effectiveComponents -co
 #   files      yazi 及其预览依赖
 #   gitui      lazygit 终端 git UI
 $wingetTools = @(
-    @{ Name = 'Starship'; Id = 'Starship.Starship';                    Component = 'core' }
-    @{ Name = 'eza';      Id = 'eza-community.eza';                    Component = 'core' }
-    @{ Name = 'zoxide';   Id = 'ajeetdsouza.zoxide';                   Component = 'core' }
-    @{ Name = 'ripgrep';  Id = 'BurntSushi.ripgrep.MSVC';              Component = 'core' }
-    @{ Name = 'fd';       Id = 'sharkdp.fd';                           Component = 'core' }
-    @{ Name = 'bat';      Id = 'sharkdp.bat';                          Component = 'core' }
-    @{ Name = '7-Zip';    Id = '7zip.7zip';                            Component = 'core' }
-    @{ Name = 'fnm';      Id = 'Schniz.fnm';                           Component = 'core' }
-    @{ Name = 'fzf';      Id = 'junegunn.fzf';                         Component = 'completion' }
-    @{ Name = 'Neovim';   Id = 'Neovim.Neovim';                        Component = 'editor' }
+    # Desc：安装向导与安装日志里的一句话用途；Optional：纯增强、不影响核心体验，
+    # 向导里标注「可剔除」（与 README「依赖工具」表的「缺失时回退」列同源）。
+    @{ Name = 'Starship';   Id = 'Starship.Starship';               Component = 'core'; Desc = '提示符主题' }
+    @{ Name = 'eza';        Id = 'eza-community.eza';               Component = 'core'; Desc = '文件列表（图标 + git 状态）' }
+    @{ Name = 'zoxide';     Id = 'ajeetdsouza.zoxide';              Component = 'core'; Desc = '智能目录跳转（z）' }
+    @{ Name = 'ripgrep';    Id = 'BurntSushi.ripgrep.MSVC';         Component = 'core'; Desc = '内容搜索（grep）' }
+    @{ Name = 'fd';         Id = 'sharkdp.fd';                      Component = 'core'; Desc = '文件查找（find）' }
+    @{ Name = 'bat';        Id = 'sharkdp.bat';                     Component = 'core'; Desc = '文件高亮查看（cat）' }
+    @{ Name = '7-Zip';      Id = '7zip.7zip';                       Component = 'core'; Desc = '解压（unzip）' }
+    @{ Name = 'fnm';        Id = 'Schniz.fnm';                      Component = 'core'; Desc = 'Node.js 版本管理'; Optional = $true }
+    @{ Name = 'fzf';        Id = 'junegunn.fzf';                    Component = 'completion'; Desc = '模糊查找（Ctrl+t 文件 / Ctrl+r 历史）' }
+    @{ Name = 'Neovim';     Id = 'Neovim.Neovim';                   Component = 'editor'; Desc = '终端编辑器（LazyVim 基座）' }
     # Yazi 及其预览依赖
-    @{ Name = 'Yazi';         Id = 'sxyazi.yazi';                      Component = 'files' }
-    @{ Name = 'ffmpeg';       Id = 'Gyan.FFmpeg';                      Component = 'files' }
-    @{ Name = 'jq';           Id = 'jqlang.jq';                        Component = 'files' }
-    @{ Name = 'poppler';      Id = 'oschwartz10612.Poppler';           Component = 'files' }
-    @{ Name = 'ImageMagick';  Id = 'ImageMagick.ImageMagick';          Component = 'files' }
+    @{ Name = 'Yazi';        Id = 'sxyazi.yazi';                    Component = 'files'; Desc = '终端文件管理器（y）' }
+    @{ Name = 'ffmpeg';      Id = 'Gyan.FFmpeg';                    Component = 'files'; Desc = 'yazi 视频缩略图'; Optional = $true }
+    @{ Name = 'jq';          Id = 'jqlang.jq';                      Component = 'files'; Desc = 'yazi JSON 预览'; Optional = $true }
+    @{ Name = 'poppler';     Id = 'oschwartz10612.Poppler';         Component = 'files'; Desc = 'yazi PDF 预览'; Optional = $true }
+    @{ Name = 'ImageMagick'; Id = 'ImageMagick.ImageMagick';        Component = 'files'; Desc = 'yazi 字体/HEIC 预览'; Optional = $true }
     # lazygit（终端 git UI）与 LazyVim 的 treesitter 编译器
-    @{ Name = 'lazygit';   Id = 'JesseDuffield.lazygit';              Component = 'gitui' }
-    @{ Name = 'WinLibs gcc'; Id = 'BrechtSanders.WinLibs.POSIX.UCRT'; Component = 'editor' }
+    @{ Name = 'lazygit';     Id = 'JesseDuffield.lazygit';          Component = 'gitui'; Desc = '终端 Git UI（lg）' }
+    @{ Name = 'WinLibs gcc'; Id = 'BrechtSanders.WinLibs.POSIX.UCRT'; Component = 'editor'; Desc = 'treesitter 编译器（Neovim 需要）' }
 )
 # 防呆：缺 Component 标注（或值非法）的条目会被组件过滤静默跳过、永不安装，
 # 提前显式告警，避免"加了工具却怎么都装不上"的排查成本
@@ -142,6 +164,26 @@ foreach ($t in $wingetTools) {
     if (-not $t.Component -or $t.Component -notin $allComponents) {
         Write-Warning "工具 '$($t.Name)' 的 Component 标注缺失或非法（$($t.Component)），它不会被安装——请修正清单。"
     }
+}
+
+# ================= 交互式安装向导 =================
+# 无显式组件参数时的选择界面：简介 → 组件勾选 → 工具预览/剔除 → 确认。
+# 返回 $null 表示用户退出：不做任何改动直接结束。
+if ($pendingWizard) {
+    . (Join-Path $repoDir 'Scripts\Invoke-SetupWizard.ps1')
+    $wizardChoice = Invoke-SetupWizard -Tools $wingetTools -DefaultComponents $standardComponents
+    if ($null -eq $wizardChoice) {
+        Write-Host '已取消安装，未做任何改动。' -ForegroundColor DarkYellow
+        return
+    }
+    $effectiveComponents = @($wizardChoice.Components)
+    $ExcludeTools        = @($wizardChoice.ExcludeTools)
+}
+# -ExcludeTools 直接传参时同样归一化（逗号分隔兼容 pwsh -File 的单 token 形态）
+$ExcludeTools = if ($ExcludeTools) { @(__NormalizeComponents $ExcludeTools) } else { @() }
+Write-Host "安装组件: $($effectiveComponents -join ', ')" -ForegroundColor Cyan
+if ($ExcludeTools) {
+    Write-Host "剔除工具: $($ExcludeTools -join ', ')" -ForegroundColor Cyan
 }
 
 # 链接注册表（机器本地状态，不入库）：登记 setup 创建/发现的受管目标，
@@ -215,7 +257,9 @@ function Install-DepTools {
         return
     }
 
-    foreach ($tool in @($wingetTools | Where-Object { $effectiveComponents -contains $_.Component })) {
+    foreach ($tool in @($wingetTools | Where-Object {
+                $effectiveComponents -contains $_.Component -and $_.Name -notin $ExcludeTools
+            })) {
         # 幂等：已安装则跳过（winget list 无匹配时输出为空）
         $installed = winget list --id $tool.Id --exact --accept-source-agreements 2>$null |
             Select-String -Pattern ([regex]::Escape($tool.Id)) -Quiet
@@ -223,7 +267,7 @@ function Install-DepTools {
             Write-Host "已安装: $($tool.Name)" -ForegroundColor DarkGray
             continue
         }
-        Write-Host "正在安装: $($tool.Name) ($($tool.Id)) ..." -ForegroundColor Cyan
+        Write-Host "正在安装: $($tool.Name) — $($tool.Desc)（$($tool.Id)）..." -ForegroundColor Cyan
         $output = winget install --id $tool.Id -e --silent --accept-package-agreements --accept-source-agreements 2>&1 | Out-String
         if ($LASTEXITCODE -ne 0) {
             # 打印详细输出，便于定位失败原因（如源/网络问题）

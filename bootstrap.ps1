@@ -14,11 +14,16 @@
     透传给 setup.ps1，跳过工具与模块安装。
 .PARAMETER Minimal / Full / Components / SkipComponents
     透传给 setup.ps1 的组件选择（含义见 setup.ps1；默认 Standard = core+completion+gitui）。
+.PARAMETER Yes
+    透传给 setup.ps1：跳过交互式安装向导，完全非交互（脚本/CI 自动化用；
+    不指定时交互终端会进入向导：简介 → 组件勾选 → 工具预览 → 确认）。
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File bootstrap.ps1
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File bootstrap.ps1 -Full
 #>
+# CmdletBinding：让 -? 显示本帮助而非直接执行（param() 上方才生效）
+[CmdletBinding()]
 param(
     [string]$RepoUrl = 'https://github.com/lishengshang/pwsh-profile.git',
     [string]$RepoDir = (Join-Path $HOME 'Documents\PowerShell'),
@@ -26,7 +31,8 @@ param(
     [switch]$Minimal,
     [switch]$Full,
     [string[]]$Components,
-    [string[]]$SkipComponents
+    [string[]]$SkipComponents,
+    [switch]$Yes
 )
 
 $ErrorActionPreference = 'Stop'
@@ -118,6 +124,7 @@ if ($Minimal)        { $setupArgs += '-Minimal' }
 if ($Full)           { $setupArgs += '-Full' }
 if ($Components)     { $setupArgs += '-Components', ($Components -join ',') }
 if ($SkipComponents) { $setupArgs += '-SkipComponents', ($SkipComponents -join ',') }
+if ($Yes)            { $setupArgs += '-Yes' }
 & $pwshPath @setupArgs
 
 Write-Host "`n引导完成。请关闭本窗口，打开 Windows Terminal 或新的 PowerShell 7 窗口。" -ForegroundColor Cyan

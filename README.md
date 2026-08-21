@@ -36,6 +36,7 @@ git clone https://github.com/lishengshang/pwsh-profile.git $HOME\Documents\Power
 > 符号链接需要开发者模式或管理员权限，未开启时 `setup.ps1` 自动回退到复制模式；已有配置自动备份到 `backup-<时间戳>` 目录。
 > `starship.toml` 只在 `~/.config/starship.toml` **不存在时**才引入仓库默认——你有自己的主题配置时不会被覆盖。
 > 默认安装 **Standard** 组件集（core + completion + gitui）；要全量（含 Neovim / LazyVim、yazi）用 `.\setup.ps1 -Full`，详见[组件级安装选项](#组件级安装选项)。
+> 不带参数运行 `.\setup.ps1` 且处于交互终端时，会先进入**安装向导**：项目简介 → 勾选组件 → 预览将安装的工具清单（带用途说明，可剔除单个工具，如 fnm / ffmpeg 等纯增强依赖）→ 确认后才开始安装。CI / 管道等非交互环境自动跳过向导，按 Standard 安装。
 
 ### 装完后手动做 3 件事（每件 1 分钟）
 
@@ -151,6 +152,9 @@ powershell.config.json             执行策略 RemoteSigned
 - （默认不指定）：`Standard` = `core` + `completion` + `gitui`
 - `-Components <组件...>`：显式指定（优先于 `-Minimal`/`-Full`；多个组件**必须逗号分隔**，如 `-Components core,gitui`——空格分隔会被解析为位置参数而报错）
 - `-SkipComponents <组件...>`：从解析结果中剔除
+- `-Yes`：跳过交互式向导与确认，完全非交互安装（脚本 / CI 调用用）
+- `-Wizard`：强制进入交互式向导（仅当未指定任何组件参数时生效；优先于 `-Yes`）
+- `-ExcludeTools <工具名...>`：按名称剔除不想安装的工具（如 `-ExcludeTools fnm,ffmpeg`；仅影响工具安装，对应功能运行时自动降级）
 - `-SkipTools`：跳过所有工具/模块下载，仍按所选组件链接外部配置
 
 示例：只装核心与 lazygit → `.\setup.ps1 -Components core,gitui`；全量但不要编辑器 → `.\setup.ps1 -Full -SkipComponents editor`；默认 Standard 去掉 lazygit → `.\setup.ps1 -SkipComponents gitui`。
