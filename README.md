@@ -226,11 +226,12 @@ PSCompletions 用全局变量 `$PSCompletions` + 固定 guid 判断是否已初�
 
 ### 支持 Windows PowerShell 5.1 吗？
 
-支持，**安装与使用全链路可用**（兼容模式）：`bootstrap.ps1` / `setup.ps1`（含交互式向导）可直接在 5.1 下运行，部署目标按运行时 `$PROFILE` 自动解析到 `Documents\WindowsPowerShell\`，与 PS7 的部署（`Documents\PowerShell\`）互不影响；profile 入口在 5.1 下显示兼容提示后加载功能子集（别名/函数、PSReadLine、starship/eza/zoxide 等已装工具）。细节与边界：
+支持，**安装与使用全链路可用**（兼容模式）：`bootstrap.ps1` / `setup.ps1`（含交互式向导）可直接在 5.1 下运行，部署目标按运行时 `$PROFILE` 自动解析到 `Documents\WindowsPowerShell\`，与 PS7 的部署（`Documents\PowerShell\`）互不影响；profile 入口在 5.1 下加载功能子集（别名/函数、PSReadLine、starship/eza/zoxide 等已装工具）。细节与边界：
 
 - 全部脚本语法保持 5.1 可解析（不使用 `?.` / `??` 等 PS7 新语法，`.ps1` 一律 UTF-8 带 BOM——无 BOM 会被 5.1 按 ANSI/GBK 误读）。
 - 5.1 默认执行策略 Restricted 时，`setup.ps1` 自动将当前用户放开为 RemoteSigned；模块（PSCompletions / PSFzf / Terminal-Icons）安装进 5.1 自己的模块目录，PS7 侧不受影响。
 - 完整体验（性能优化与新特性）以 PowerShell 7+ 为准；随时可在仓库目录执行 `.\bootstrap.ps1` 补装 pwsh 7。只想在 5.1 部署、跳过 PS7 安装询问：`powershell -ExecutionPolicy Bypass -File bootstrap.ps1 -SkipPwsh`。
+- 启动提示：**纯 5.1 机器（未装 pwsh 7）默认完全静默**；装了 pwsh 7 却用 `powershell` 启动时会轻提一句，设用户级环境变量可彻底关闭：`setx PWSH_PROFILE_QUIET 1`（新开终端生效）。
 
 ### yazi 提示 `Cannot find 'file' to detect the file's MIME type`？
 
