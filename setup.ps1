@@ -1,8 +1,11 @@
-﻿#Requires -Version 7
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     安装 PowerShell profile 到当前用户的 PowerShell 配置目录。
 .DESCRIPTION
+    支持 PowerShell 7+（完整体验）与 Windows PowerShell 5.1（兼容模式）；
+    链接目标基于运行时的 $PROFILE 动态解析，5.1 下自动部署到
+    Documents\WindowsPowerShell\，与 PS7 的部署互不影响。
     1. 通过符号链接把仓库中的 profile 文件映射到 $PROFILE 所在目录
        （符号链接需要管理员权限或开发者模式，否则回退到复制模式）。
     2. 默认按 Standard 组件用 winget 安装依赖工具、Install-Module 安装模块；
@@ -326,6 +329,8 @@ function Install-YaziFlavor {
 }
 
 function Install-PwshModules {
+    # 5.1 默认 TLS 协议连不上 PSGallery，强制 TLS 1.2（PS7 默认已含，无副作用）
+    [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
     # NuGet provider 缺失时自动装（否则 Install-Module 会交互式询问）
     if (-not (Get-PackageProvider -Name NuGet -ErrorAction SilentlyContinue)) {
         Install-PackageProvider -Name NuGet -Force -Scope CurrentUser | Out-Null
@@ -469,6 +474,19 @@ else {
     if ($effectiveComponents -contains 'files') { Install-YaziFlavor }
     Install-PwshModules
     Write-Host "`n依赖安装完成。请重新打开终端让 winget 注入的 PATH 生效。" -ForegroundColor Cyan
+}
+
+# ================= 5.1 执行策略 =================
+# Windows PowerShell 5.1 默认执行策略 Restricted，新会话会拒绝加载 profile。
+# 仅当「新会话的实际生效策略会是 Restricted」时放开为 CurrentUser RemoteSigned
+# （用户已显式设置过策略则不动；PS7 不经过这里，其策略由 powershell.config.json 管理）。
+if ($PSVersionTable.PSVersion.Major -lt 7) {
+    $policyDefault = Get-ExecutionPolicy -Scope CurrentUser
+    if ($policyDefault -eq 'Undefined') { $policyDefault = Get-ExecutionPolicy -Scope LocalMachine }
+    if ($policyDefault -eq 'Restricted') {
+        Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
+        Write-Host '已将当前用户执行策略设为 RemoteSigned（Windows PowerShell 5.1 加载 profile 需要）。' -ForegroundColor DarkYellow
+    }
 }
 
 # ================= 完成横幅（点阵大字，安装完成时显示） =================

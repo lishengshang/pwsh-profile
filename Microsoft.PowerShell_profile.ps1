@@ -5,9 +5,20 @@
 # 兼容模式（降级加载）。各子模块语法均保持 5.1 可解析（禁用 ?. / ??
 # 等 PS7 新语法，见 AGENTS.md），可选工具与模块缺失时自动降级，
 # 因此 5.1 也能加载大部分功能；完整体验（性能优化、新特性）以 PS7+ 为准。
-if ($PSVersionTable.PSVersion.Major -lt 7) {
-    Write-Host "Windows PowerShell $($PSVersionTable.PSVersion) 兼容模式：配置以精简功能加载。" -ForegroundColor Yellow
-    Write-Host '建议安装 PowerShell 7+ 获得完整体验：在仓库目录执行 .\bootstrap.ps1。' -ForegroundColor Yellow
+# 兼容提示只对「装了 pwsh 7 却开 5.1」的场景轻提一句（多半是敲了 powershell
+# 而非 pwsh）；纯 5.1 机器（未装 pwsh 7）默认静默，不打扰只装 5.1 的用户。
+# 设环境变量 PWSH_PROFILE_QUIET=1（用户级 setx 一次即可）可彻底关闭提示。
+if ($PSVersionTable.PSVersion.Major -lt 7 -and -not $env:PWSH_PROFILE_QUIET) {
+    foreach ($_pwsh in @(
+            (Join-Path $env:ProgramFiles 'PowerShell\7\pwsh.exe')
+            (Join-Path $env:LOCALAPPDATA 'Programs\PowerShell\7\pwsh.exe')
+            (Join-Path $env:LOCALAPPDATA 'Microsoft\WindowsApps\pwsh.exe')   # Microsoft Store 版
+        )) {
+        if (Test-Path $_pwsh) {
+            Write-Host '兼容模式加载（已装 PowerShell 7，完整体验请用 pwsh 启动；设 PWSH_PROFILE_QUIET=1 关闭本提示）' -ForegroundColor DarkYellow
+            break
+        }
+    }
 }
 
 # 全局变量：profile 根目录，供子模块引用。

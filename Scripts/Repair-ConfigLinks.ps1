@@ -1,4 +1,4 @@
-﻿#Requires -Version 7
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     修复被 git / 原子保存编辑器弄断的配置链接，并刷新 Copy 降级副本。

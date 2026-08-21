@@ -1,17 +1,22 @@
 ﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
-    在全新 Windows 机器上从零引导：装 PowerShell 7 → 装 Git → 克隆仓库 → 运行 setup.ps1。
+    在全新 Windows 机器上从零引导：装 Git → 克隆仓库 → （可选）装 PowerShell 7 → 运行 setup.ps1。
 .DESCRIPTION
     只需在系统自带的 Windows PowerShell 5.1（powershell.exe）里执行一次，
     适合"别人拿到这个项目"的第一条命令。默认克隆到 $HOME\Documents\PowerShell
     （pwsh 的 $PROFILE 目录），因此 profile 直接生效，setup.ps1 会跳过文件链接只装工具。
+    PowerShell 7 为可选推荐（完整体验）：5.1 交互运行时会询问是否顺便安装
+    （默认推荐安装）；不装则以当前 5.1 兼容模式完成部署，同样进入安装向导。
 .PARAMETER RepoUrl
     仓库地址，默认本仓库（https://github.com/lishengshang/pwsh-profile.git）。
 .PARAMETER RepoDir
     克隆目标目录，默认 $HOME\Documents\PowerShell。
 .PARAMETER SkipTools
     透传给 setup.ps1，跳过工具与模块安装。
+.PARAMETER SkipPwsh
+    跳过 PowerShell 7 安装，仅以 Windows PowerShell 5.1 兼容模式部署
+    （不想被交互询问时的显式开关）。
 .PARAMETER Minimal / Full / Components / SkipComponents
     透传给 setup.ps1 的组件选择（含义见 setup.ps1；默认 Standard = core+completion+gitui）。
 .PARAMETER Yes
@@ -21,6 +26,8 @@
     powershell -ExecutionPolicy Bypass -File bootstrap.ps1
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File bootstrap.ps1 -Full
+.EXAMPLE
+    powershell -ExecutionPolicy Bypass -File bootstrap.ps1 -SkipPwsh
 #>
 # CmdletBinding：让 -? 显示本帮助而非直接执行（param() 上方才生效）
 [CmdletBinding()]
@@ -28,6 +35,7 @@ param(
     [string]$RepoUrl = 'https://github.com/lishengshang/pwsh-profile.git',
     [string]$RepoDir = (Join-Path $HOME 'Documents\PowerShell'),
     [switch]$SkipTools,
+    [switch]$SkipPwsh,
     [switch]$Minimal,
     [switch]$Full,
     [string[]]$Components,
@@ -68,8 +76,25 @@ if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
     throw '未找到 winget：需要 Windows 10 1809+ 的 App Installer，请先从 Microsoft Store 安装。'
 }
 
-# 2. PowerShell 7 + Git
-Assert-Tool 'pwsh' 'Microsoft.PowerShell'
+# 2. PowerShell 7（可选推荐）+ Git
+#    已在 pwsh 7 中运行时 Assert-Tool 会直接命中跳过；
+#    5.1 交互终端下询问是否顺便装 PS7（默认推荐），-SkipPwsh / -Yes 跳过询问。
+$skipPwshInstall = $false
+if ($SkipPwsh) {
+    $skipPwshInstall = $true
+    Write-Host '跳过 PowerShell 7 安装（-SkipPwsh）：以 Windows PowerShell 5.1 兼容模式部署。' -ForegroundColor DarkYellow
+}
+elseif ($PSVersionTable.PSVersion.Major -lt 7 -and
+    [Environment]::UserInteractive -and -not [Console]::IsInputRedirected -and -not $Yes) {
+    $ans = Read-Host '是否顺便安装 PowerShell 7 获得完整体验？(Y=推荐安装 / n=仅用自带 5.1)'
+    if ($ans -match '^\s*[nN]') {
+        $skipPwshInstall = $true
+        Write-Host '已选择仅用 Windows PowerShell 5.1（兼容模式）。' -ForegroundColor DarkYellow
+    }
+}
+if (-not $skipPwshInstall) {
+    Assert-Tool 'pwsh' 'Microsoft.PowerShell'
+}
 Assert-Tool 'git' 'Git.Git'
 
 # git 解析（PATH 重建后仍找不到时兜底常见安装路径，git clone 依赖它）
@@ -96,7 +121,8 @@ else {
     if ($LASTEXITCODE -ne 0) { throw "克隆失败：$RepoUrl" }
 }
 
-# 4. 运行 setup.ps1（刚装的 pwsh 可能不在 PATH，用完整路径兜底）
+# 4. 运行 setup.ps1：优先 pwsh 7（完整体验）；没有 pwsh 时用当前 powershell.exe
+#    以 5.1 兼容模式部署（链接目标按运行时 $PROFILE 解析，两版本互不影响）
 $setup = Join-Path $RepoDir 'setup.ps1'
 if (-not (Test-Path $setup)) { throw "未找到 $setup" }
 
@@ -109,22 +135,27 @@ else {
     if (-not $pwshPath) {
         $pwshPath = Join-Path $env:ProgramFiles 'PowerShell\7\pwsh.exe'
     }
-}
-if (-not (Test-Path $pwshPath)) {
-    Write-Warning "找不到 pwsh（$pwshPath）。请重新打开终端后再运行: .\setup.ps1"
-    return
+    if (-not (Test-Path $pwshPath)) { $pwshPath = $null }
 }
 
 # 透传组件选择参数给 setup.ps1
 # 注意：pwsh -File 下数组参数不会贪心收集后续 token——'-Components','a','b' 只会
 # 绑定 a、丢弃 b。多值参数必须 join 成单个逗号分隔字符串（setup.ps1 侧会拆分）
-$setupArgs = @('-NoProfile', '-File', $setup)
+$setupArgs = @()
 if ($SkipTools)      { $setupArgs += '-SkipTools' }
 if ($Minimal)        { $setupArgs += '-Minimal' }
 if ($Full)           { $setupArgs += '-Full' }
 if ($Components)     { $setupArgs += '-Components', ($Components -join ',') }
 if ($SkipComponents) { $setupArgs += '-SkipComponents', ($SkipComponents -join ',') }
 if ($Yes)            { $setupArgs += '-Yes' }
-& $pwshPath @setupArgs
 
-Write-Host "`n引导完成。请关闭本窗口，打开 Windows Terminal 或新的 PowerShell 7 窗口。" -ForegroundColor Cyan
+if ($pwshPath) {
+    & $pwshPath @('-NoProfile', '-File', $setup) @setupArgs
+    Write-Host "`n引导完成。请关闭本窗口，打开 Windows Terminal 或新的 PowerShell 7 窗口。" -ForegroundColor Cyan
+}
+else {
+    # 5.1 默认执行策略 Restricted，必须 -ExecutionPolicy Bypass 才能运行脚本
+    Write-Host "`n未安装 PowerShell 7：使用 Windows PowerShell 5.1 完成部署（兼容模式）。" -ForegroundColor DarkYellow
+    & (Join-Path $PSHOME 'powershell.exe') @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $setup) @setupArgs
+    Write-Host "`n引导完成。打开新的 PowerShell 窗口即可使用（兼容模式；随时可补装 PowerShell 7 获得完整体验）。" -ForegroundColor Cyan
+}

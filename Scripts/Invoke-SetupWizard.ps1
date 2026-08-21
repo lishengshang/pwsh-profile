@@ -1,4 +1,4 @@
-﻿#Requires -Version 7
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     setup.ps1 的交互式安装向导：简介 → 组件勾选 → 工具预览/剔除 → 确认。
@@ -37,7 +37,7 @@ function Show-WizardIntro {
     Write-Host ''
     Write-Host '════════════ PowerShell Profile 安装向导 ════════════' -ForegroundColor Cyan
     Write-Host @'
-模块化 PowerShell 7 配置（仓库即配置）：提示符、别名、补全与常用工具的接线。
+模块化 PowerShell 配置（仓库即配置）：提示符、别名、补全与常用工具的接线。
 
 本次安装将做三件事：
   1. 部署 profile 文件到 $PROFILE 目录（已有配置自动备份到 backup-<时间戳>，不会丢）

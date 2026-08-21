@@ -22,6 +22,7 @@ lazygit/config.yml                 lazygit 主题 Solarized Dark（链接到 %AP
 yazi/theme.toml                    yazi 主题（链接到 %APPDATA%\yazi\config\，flavor 每设备装不入库）
 nvim/                              LazyVim 配置（链接到 $env:LOCALAPPDATA\nvim）
 Scripts/                           独立脚本（wallpaper.ps1、Get-ManagedLinks.ps1、LinkRegistry.ps1、Repair-ConfigLinks.ps1）
+docs/                              用户文档（usage 速查 / reference 参考 / faq）
 windows-terminal/                  终端配色与说明
 ```
 
@@ -35,13 +36,15 @@ Mason LSP、treesitter 产物在各设备 `$env:LOCALAPPDATA\nvim-data` 自动�
    `Import-Module` 重量级模块——参照现有做法：懒加载（`modules.ps1`）、延迟到首次调用
    （`aliases.ps1` 的 `__Ensure-TerminalIcons`）、缓存（`init-cache.ps1`）。新工具探测
    一律走入口文件的 `File.Exists` 循环，不要用 `Get-Command`。
+   例外：PSCompletions 官方要求全局作用域直接导入（禁止嵌套 `Import-Module`），
+   无法懒加载，冷启动 +~200ms 是官方约束的代价，勿试图"优化"它。
 2. **三处同步**：新增/移除外部工具时，以下三处必须同时改，缺一不可：
    - `setup.ps1` 的 `$wingetTools` 列表（**并标注 `Component`**，决定它属于哪个安装组件）
-   - `README.md` 的「依赖工具」表与「组件级安装选项」小节
+   - `docs/reference.md` 的「组件」小节与「依赖工具」表
    - 若 profile 需要探测：入口文件的工具名循环
-   - 外部配置（starship/lazygit/yazi/nvim）的组件归属在 `Scripts/Get-ManagedLinks.ps1` 的 `Component` 字段
+   外部配置（starship/lazygit/yazi/nvim）的组件归属在 `Scripts/Get-ManagedLinks.ps1` 的 `Component` 字段
 
-   新增命令别名/函数时同步更新 `README.md` 使用速查表。
+   新增命令别名/函数时同步更新 `docs/usage.md` 使用速查表（README 的「快速上手」只保留高频子集）。
    全部管理链接（核心 profile 文件 + starship/lazygit/yazi/nvim 外部配置）的清单
    单源维护在 `Scripts/Get-ManagedLinks.ps1`，setup 与修复脚本都引用它，改链接只改
    这一处。链接注册表（%LOCALAPPDATA%\pwsh-profile\linked-targets.json）记录
@@ -53,8 +56,10 @@ Mason LSP、treesitter 产物在各设备 `$env:LOCALAPPDATA\nvim-data` 自动�
    `$global:__Tools.ContainsKey('<name>')` 判断，缺失时回退内置命令或静默跳过，
    profile 不得因缺工具报错。
 4. **兼容性**：PowerShell 7+ 是主力支持版本；Windows PowerShell 5.1
-   为兼容模式（降级加载）。因此所有脚本必须保持 5.1 可解析：禁用
-   `?.` / `??` / 三元等 PS7 新语法，可选依赖缺失时优雅降级。
+   为兼容模式（降级加载，setup/bootstrap/向导全链路 5.1 可运行）。因此
+   所有脚本必须保持 5.1 可解析：禁用 `?.` / `??` / 三元等 PS7 新语法；
+   `.ps1` 一律保存为 UTF-8 **带 BOM**（无 BOM 时 5.1 按 ANSI/GBK 误读，
+   中文注释会破坏解析）；可选依赖缺失时优雅降级。
 5. **`setup.ps1` 幂等**：已安装的工具/模块、已存在的链接必须跳过，重复运行无副作用。
 6. **风格**：注释和文档用中文；别名简短小写（`gs`/`wup`），函数避免未批准动词；
    commit message 用中文、前缀分类（`profile:` / `setup:` / `docs:` / `修复:` 等，见 git log）。
