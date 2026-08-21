@@ -1,4 +1,4 @@
-#Requires -Version 7
+﻿#Requires -Version 7
 <#
 .SYNOPSIS
     安装 PowerShell profile 到当前用户的 PowerShell 配置目录。

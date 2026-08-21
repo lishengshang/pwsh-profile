@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     在全新 Windows 机器上从零引导：装 PowerShell 7 → 装 Git → 克隆仓库 → 运行 setup.ps1。
