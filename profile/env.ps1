@@ -4,23 +4,55 @@
 # 注：PATH 重建已提前到入口（Microsoft.PowerShell_profile.ps1）的
 # 工具探测之前执行，此处只处理 fnm 缓存与默认编辑器。
 
-# fnm (Node 版本管理)
-# 注意：fnm env 输出的 FNM_MULTISHELL_PATH / PATH 是每 shell 进程独立的临时
-# 路径，跨会话缓存 7 天会导致新终端指向旧进程目录（失效 / 多终端互相污染），
-# 因此不做缓存，每次启动现场执行一次（几十毫秒，可靠性优先）。
-if ($global:__Tools.ContainsKey('fnm')) {
-    Remove-Item "$env:TEMP\fnm-init-cache.ps1" -ErrorAction SilentlyContinue   # 清理历史缓存产物
-    $out = & $global:__Tools['fnm'].Source env --use-on-cd --shell powershell 2>$null | Out-String
-    if ($out) {
-        # fnm env 把生成时的 PATH 快照写进 $env:PATH（还可能含父进程遗留的旧
-        # multishell），恢复刷新过的 PATH 后只前置本进程的 shim 目录
-        $_cleanPath = $env:PATH
-        Invoke-Expression $out | Out-Null
-        $env:PATH = $_cleanPath
-        if ($env:FNM_MULTISHELL_PATH) {
-            $env:PATH = "$env:FNM_MULTISHELL_PATH;$env:PATH"
+# fnm (Node 版本管理) —— 静态兑底 + 懒加载两段式
+# fnm env 输出含每进程独立的 FNM_MULTISHELL_PATH，无法跨会话缓存（旧注释：
+# 缓存会导致新终端指向已销毁的旧进程目录）；同步执行实测 ~25-70ms，曾是
+# profile 自身最大的可控启动成本。拆成两段后启动期零进程调用：
+#   1. 静态兑底：把 default 版本的安装目录（junction）前置到 PATH——
+#      node/npm/npx/corepack 及 npm -g 全局命令立即可用（默认版本）。
+#   2. 懒初始化：首次调用 node/npm/npx/corepack 时才执行 fnm env（定义 cd
+#      包装函数实现进目录自动切换 .nvmrc/.node-version）并对当前目录做一次
+#      版本解析（等价 use-on-cd 进目录行为），multishell 前置覆盖静态目录。
+# PROFILE_NO_FNM=1 完全跳过（不用 Node 的场景，node 等走系统 PATH）。
+if ($global:__Tools.ContainsKey('fnm') -and -not $env:PROFILE_NO_FNM) {
+    # 静态兑底目录：fnm default 别名 junction（用户从未装过 Node 时不存在，静默跳过）
+    $_fnmDefault = Join-Path $env:APPDATA 'fnm\aliases\default'
+    if (Test-Path $_fnmDefault) { $env:PATH = "$_fnmDefault;$env:PATH" }
+
+    $script:__fnmReady = $false
+    # 占位函数模式：首次调用触发完整初始化，之后每次都转发到真实可执行文件。
+    # 注意不能用 zoxide 那种「init 重定义自身」的模式——fnm env 只设环境变量、
+    # 不重定义这些命令，必须显式解析 Application 类型避开占位函数自身。
+    function __Ensure-Fnm ([string]$Cmd) {
+        if (-not $script:__fnmReady) {
+            $script:__fnmReady = $true
+            Remove-Item "$env:TEMP\fnm-init-cache.ps1" -ErrorAction SilentlyContinue   # 清理历史缓存产物
+            $out = & $global:__Tools['fnm'].Source env --use-on-cd --shell powershell 2>$null | Out-String
+            if ($out) {
+                # fnm env 把生成时的 PATH 快照写进 $env:PATH（还可能含父进程遗留的旧
+                # multishell），恢复刷新过的 PATH 后只前置本进程的 shim 目录
+                $_cleanPath = $env:PATH
+                Invoke-Expression $out | Out-Null
+                $env:PATH = $_cleanPath
+                if ($env:FNM_MULTISHELL_PATH) {
+                    $env:PATH = "$env:FNM_MULTISHELL_PATH;$env:PATH"
+                }
+            }
+            # 当前目录带版本文件时补一次解析（模拟 use-on-cd 进入该目录的行为）
+            if ($out -and ((Test-Path .nvmrc) -or (Test-Path .node-version) -or (Test-Path package.json))) {
+                & $global:__Tools['fnm'].Source use --silent-if-unchanged 2>$null
+            }
         }
+        # 解析并执行真实命令（-CommandType Application 跳过占位函数自身；
+        # 用 Source 而非 FullName——ApplicationInfo 没有 FullName 属性）
+        $real = Get-Command $Cmd -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($real) { & $real.Source @args }
+        else { Write-Host "找不到 $Cmd（fnm 未安装任何 Node 版本？运行 fnm install <版本>）" -ForegroundColor Yellow }
     }
+    function node     { __Ensure-Fnm node @args }
+    function npm      { __Ensure-Fnm npm @args }
+    function npx      { __Ensure-Fnm npx @args }
+    function corepack { __Ensure-Fnm corepack @args }
 }
 
 # fzf UI 美化（Tokyo Night 配色 + 高度/反向/圆角边框/预览窗）

@@ -58,10 +58,6 @@
   - `backup-<时间戳>` 目录随重跑 setup 累积（已被 .gitignore 忽略），
     可考虑保留最近 N 份自动清理。
 
-- [ ] **fnm 启动开销（~68ms）可选跳过**
-  - fnm env 输出含每进程独立路径，无法缓存（见 env.ps1 注释），是 profile
-    自身最大的可控启动成本。可加 `PROFILE_NO_FNM=1` 开关供不用 Node 的场景。
-
 ## 已完成
 
 - [x] 修复 setup 重复运行时重复备份和重建链接的问题。
@@ -81,3 +77,6 @@
 - [x] 降低 PSCompletions 启动成本——上游 v7.3.0 内置懒初始化后已基本解决，
       剩余为模块 JIT 固有开销（~130ms），勿再自行包装 OnIdle（见 AGENTS.md 例外条款）。
 - [x] 修复 touch 清空已存在文件内容的问题（改为 GNU 语义：存在则只更新时间戳）。
+- [x] fnm 启动开销优化：静态兑底（default 版本目录前置 PATH）+ 懒加载
+      （首次 node/npm/npx/corepack 才执行 fnm env），启动期零进程调用，
+      另提供 PROFILE_NO_FNM=1 总开关。

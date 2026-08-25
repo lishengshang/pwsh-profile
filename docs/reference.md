@@ -61,6 +61,7 @@
 | `PROFILE_NO_TIME` / `PROFILE_NO_STARTUP` | 关闭耗时行 / 启动信息 |
 | `PROFILE_NO_COMPLETIONS` | 跳过 PSCompletions 导入（离线/CI 用） |
 | `PROFILE_NO_FZF_TAB` | 恢复默认 Tab 补全 |
+| `PROFILE_NO_FNM` | 跳过 fnm 初始化（不用 Node；node/npm 走系统 PATH） |
 | `PROFILE_KEEP_PARENT_PATH` | 保留父进程 PATH（默认从注册表重建，会丢弃 IDE/venv 注入的 PATH） |
 | `PROFILE_DEBUG` | 打印各模块耗时与加载错误 |
 | `PWSH_PROFILE_QUIET` | 5.1 兼容模式：关闭「建议用 pwsh」轻提示 |
@@ -72,7 +73,7 @@
 ```
 Microsoft.PowerShell_profile.ps1   入口：重建 PATH → 探测工具 → 按序加载 profile/*.ps1
 profile/init-cache.ps1             工具 init 缓存（7 天 TTL + 升级即失效 + 原子写入）
-profile/env.ps1                    fnm 初始化、EDITOR/VISUAL、fzf 配色
+profile/env.ps1                    fnm（静态兑底+懒加载）、EDITOR/VISUAL、fzf 配色
 profile/prompt.ps1                 starship 提示符（缓存懒加载到首次 prompt）
 profile/psreadline.ps1             PSReadLine（历史搜索、配色、快捷键）
 profile/modules.ps1                zoxide 懒加载；PSCompletions / PSFzf
