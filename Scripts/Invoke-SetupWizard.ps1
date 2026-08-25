@@ -4,8 +4,8 @@
     setup.ps1 的交互式安装向导：简介 → 组件勾选 → 工具预览/剔除 → 确认。
 .DESCRIPTION
     仅在 setup.ps1 无显式组件参数且处于交互终端时被调用（-Wizard 可强制）。
-    工具清单与合法组件的唯一事实来源仍是 setup.ps1（$wingetTools / $allComponents），
-    本文件只负责展示与交互。
+    工具清单、合法组件与随组件模块的唯一事实来源都是 setup.ps1
+    （$wingetTools / $allComponents / $componentModules），本文件只负责展示与交互。
     输入兜底：Read-Host 在 stdin 被重定向/EOF 时返回空串——所有提示均把空输入
     视为「接受当前默认继续」，保证意外调用（CI/管道）不会卡死或崩溃。
 #>
@@ -18,13 +18,6 @@ $script:WizardComponents = @(
     @{ Key = 'editor';     Mark = '可选';       Desc = 'Neovim + LazyVim 编辑器（含 treesitter 编译器 WinLibs gcc）' }
     @{ Key = 'files';      Mark = '可选';       Desc = 'yazi 终端文件管理器（y 命令）及预览依赖' }
 )
-
-# 随组件安装的 PowerShell 模块（仅展示用；安装清单的事实来源是 setup.ps1 的
-# Install-PwshModules，两处需保持同步）
-$script:WizardModules = [ordered]@{
-    core       = 'Terminal-Icons'
-    completion = 'PSCompletions、PSFzf'
-}
 
 # 解析用户输入：按逗号/空白拆分为小写 token（'1 3,core' → '1','3','core'）
 function __WizardParseAnswer ([string]$Answer) {
@@ -96,6 +89,7 @@ function Invoke-InstallPreview {
     param(
         [string[]]$Components,
         [object[]]$Tools,
+        [System.Collections.IDictionary]$ComponentModules,
         [System.Collections.Generic.List[string]]$Excluded
     )
 
@@ -125,9 +119,9 @@ function Invoke-InstallPreview {
         }
 
         # 随组件走、不可单独剔除的内容
-        $mods = @($script:WizardModules.Keys |
+        $mods = @($ComponentModules.Keys |
             Where-Object { $Components -contains $_ } |
-            ForEach-Object { $script:WizardModules[$_] })
+            ForEach-Object { $ComponentModules[$_] })
         if ($mods) {
             Write-Host ''
             Write-Host '  随组件安装的 PowerShell 模块:' -ForegroundColor Yellow
@@ -172,7 +166,8 @@ function Invoke-InstallPreview {
 function Invoke-SetupWizard {
     param(
         [object[]]$Tools,
-        [string[]]$DefaultComponents
+        [string[]]$DefaultComponents,
+        [System.Collections.IDictionary]$ComponentModules
     )
 
     Show-WizardIntro
@@ -196,7 +191,7 @@ function Invoke-SetupWizard {
         }
 
         while ($true) {
-            $r = Invoke-InstallPreview -Components $selected -Tools $Tools -Excluded $excluded
+            $r = Invoke-InstallPreview -Components $selected -Tools $Tools -Excluded $excluded -ComponentModules $ComponentModules
             if ($null -eq $r)     { return $null }
             if ($r -eq 'confirm') { return @{ Components = @($selected); ExcludeTools = @($excluded) } }
             if ($r -eq 'back')    { break }   # 返回组件选择，保留已勾选状态

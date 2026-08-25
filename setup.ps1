@@ -169,12 +169,19 @@ foreach ($t in $wingetTools) {
     }
 }
 
+# 组件 → 随组件安装的 PSGallery 模块（唯一事实来源：向导展示与实际安装共用，
+# 改这里即可，勿在向导/安装函数里另写一份）
+$componentModules = [ordered]@{
+    core       = @('Terminal-Icons')
+    completion = @('PSCompletions', 'PSFzf')
+}
+
 # ================= 交互式安装向导 =================
 # 无显式组件参数时的选择界面：简介 → 组件勾选 → 工具预览/剔除 → 确认。
 # 返回 $null 表示用户退出：不做任何改动直接结束。
 if ($pendingWizard) {
     . (Join-Path $repoDir 'Scripts\Invoke-SetupWizard.ps1')
-    $wizardChoice = Invoke-SetupWizard -Tools $wingetTools -DefaultComponents $standardComponents
+    $wizardChoice = Invoke-SetupWizard -Tools $wingetTools -DefaultComponents $standardComponents -ComponentModules $componentModules
     if ($null -eq $wizardChoice) {
         Write-Host '已取消安装，未做任何改动。' -ForegroundColor DarkYellow
         return
@@ -336,9 +343,11 @@ function Install-PwshModules {
         Install-PackageProvider -Name NuGet -Force -Scope CurrentUser | Out-Null
     }
 
-    $need = @()
-    if ($effectiveComponents -contains 'completion') { $need += 'PSCompletions', 'PSFzf' }
-    if ($effectiveComponents -contains 'core')       { $need += 'Terminal-Icons' }
+    # 从唯一事实来源（$componentModules）按所选组件推导，与向导展示同源
+    $need = @(
+        $componentModules.Keys | Where-Object { $effectiveComponents -contains $_ } |
+            ForEach-Object { $componentModules[$_] }
+    )
     $need = @($need | Where-Object { -not (Get-Module -ListAvailable -Name $_) })
     if (-not $need) {
         Write-Host '已安装: PSCompletions / PSFzf / Terminal-Icons' -ForegroundColor DarkGray
