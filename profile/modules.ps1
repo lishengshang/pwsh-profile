@@ -22,7 +22,7 @@ if ($global:__Tools.ContainsKey('zoxide')) {
 # 仅在模块未加载时给出提示——注意不得在此嵌套调用 Import-Module
 # （官方文档明确禁止，嵌套调用会导致模块无法生效），正确做法是新开终端。
 function psc {
-    Write-Host 'PSCompletions 模块未加载：请新开终端（profile 会同步导入）或运行 .\setup.ps1' -ForegroundColor Yellow
+    Write-Host 'PSCompletions 模块未加载：请新开终端（profile 会同步导入）；仍缺失时执行 Install-Module PSCompletions -Scope CurrentUser' -ForegroundColor Yellow
 }
 
 # 防止重复订阅（如手动 dot-source profile 时）

@@ -79,9 +79,10 @@ $_total = [System.Diagnostics.Stopwatch]::StartNew()
 # 用 File.Exists 遍历 PATH（.exe/.cmd/.bat），比 Get-Command 快约 5 倍：
 # Get-Command 对每个缺失名字会做 PATH × PATHEXT 全展开（11 个名字 ~190ms），
 # 这里 ~37ms。工具一律为外部可执行文件，无需 Get-Command 的命令发现语义。
+# 只列 profile 会引用 __Tools 的名字：jq 等纯外部依赖（yazi 预览自寻 PATH）不入列。
 $global:__Tools = @{}
 $_dirs = $env:PATH -split ';' | Where-Object { $_ }
-foreach ($_name in 'eza','rg','grep','fd','bat','7z','fnm','nvim','zoxide','fzf','starship','yazi','jq','lazygit','git') {
+foreach ($_name in 'eza','rg','grep','fd','bat','7z','fnm','nvim','zoxide','fzf','starship','yazi','lazygit','git') {
     foreach ($_d in $_dirs) {
         foreach ($_e in '.exe','.cmd','.bat') {
             if ([System.IO.File]::Exists("$_d\$_name$_e")) {

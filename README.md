@@ -1,6 +1,6 @@
 # pwsh-profile
 
-模块化 PowerShell 配置：一条命令装好新机器，冷启动 ~300ms，所有工具可选、缺失自动降级，仓库即配置。
+模块化 PowerShell 配置：一条命令装好新机器，亚秒级冷启动，所有工具可选、缺失自动降级，仓库即配置。
 
 > PowerShell 7+ 完整体验；Windows PowerShell 5.1 兼容模式全链路可用（安装 / 向导 / profile，差异见 [FAQ](docs/faq.md)）。
 
