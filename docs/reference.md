@@ -87,4 +87,4 @@ docs/                              文档（速查 / 参考 / FAQ）
 
 ## 自定义
 
-本仓库只做「接线」，深入定制请看官方文档：提示符 [Starship](https://starship.rs) · 模糊查找 [fzf](https://github.com/junegunn/fzf) / [PSFzf](https://github.com/psfzf/PSFzf) · 补全 [PSCompletions](https://github.com/abgox/PSCompletions) · 编辑器 [LazyVim](https://www.lazyvim.org/) · 终端 [Windows Terminal](https://github.com/microsoft/terminal)。改动仓库内配置后 commit/push，其他设备 `psync` 对齐。
+本仓库只做「接线」，深入定制请看官方文档：提示符 [Starship](https://starship.rs) · 模糊查找 [fzf](https://github.com/junegunn/fzf) / [PSFzf](https://github.com/kelleyma49/PSFzf) · 补全 [PSCompletions](https://github.com/abgox/PSCompletions) · 编辑器 [LazyVim](https://www.lazyvim.org/) · 终端 [Windows Terminal](https://github.com/microsoft/terminal)。改动仓库内配置后 commit/push，其他设备 `psync` 对齐。

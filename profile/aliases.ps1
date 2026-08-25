@@ -128,7 +128,19 @@ function psync {
 # ==============================================================
 # Linux 移植（优先使用现代替代工具）
 # ==============================================================
-function touch ($file) { New-Item -ItemType File -Path $file -Force | Out-Null }
+# GNU touch 语义：已存在的文件只更新时间戳（New-Item -Force 会重建文件、
+# 清空内容——数据丢失事故），不存在时才新建；支持一次传多个路径
+function touch {
+    param([Parameter(Mandatory)][string[]]$Path)
+    foreach ($p in $Path) {
+        if (Test-Path -LiteralPath $p) {
+            (Get-Item -LiteralPath $p -Force).LastWriteTime = Get-Date
+        }
+        else {
+            New-Item -ItemType File -Path $p -Force | Out-Null
+        }
+    }
+}
 
 function which ($cmd) {
     if (-not $cmd) {

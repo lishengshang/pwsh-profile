@@ -42,5 +42,8 @@ Set-PSReadLineKeyHandler -Key UpArrow   -Function HistorySearchBackward
 Set-PSReadLineKeyHandler -Key DownArrow -Function HistorySearchForward
 Set-PSReadLineKeyHandler -Key Ctrl+d    -Function DeleteCharOrExit
 Set-PSReadLineKeyHandler -Key Ctrl+z    -Function Undo
+# Tab → MenuComplete：仅在 PSCompletions 未加载时生效——modules.ps1 导入 PSC 后
+# 其 trigger_key（默认 Tab）会覆盖这里的绑定（PSC 菜单含原生补全回退，功能不丢）；
+# 设 PROFILE_NO_COMPLETIONS=1 跳过 PSC 时，本绑定恢复效力
 Set-PSReadLineKeyHandler -Key Tab       -Function MenuComplete
 Set-PSReadLineKeyHandler -Key Alt+Enter -Function AddLine

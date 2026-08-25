@@ -28,33 +28,16 @@
   - 防止两个 setup/Repair 进程同时读写时相互覆盖登记。
   - 优先使用命名 Mutex 或单次读取、批量写入策略。
 
-- [ ] **向 PSCompletions 上游提交懒加载 Feature Request**
-  - 参考 Issue #164（OnIdle 中嵌套导入失败）和 Issue #150（启动时远程更新检查导致变慢）。
-  - 目标：提供官方的 deferred initialization、`-NoUpdateCheck` 或安全的 lazy mode。
-  - 相关链接：
-    - https://github.com/abgox/PSCompletions/issues/164
-    - https://github.com/abgox/PSCompletions/issues/150
-    - https://pscompletions.abgox.com/zh-cn/docs/direct-import-module
-
 ## P2：长期优化
 
-- [ ] **提供 setup 安装模式**
-  - `-Minimal`：Profile、Git、基础命令行工具。
-  - `-Full`：Yazi、Neovim/LazyVim、lazygit、预览依赖和编译器。
-  - 增加 `-SkipNvim`、`-SkipYazi`、`-SkipModules` 等细粒度开关。
-
-- [ ] **降低 PSCompletions 启动成本**
-  - 当前必须顶层导入，不能在本项目中自行改成 OnIdle 懒加载。
-  - 先通过 `psc config enable_completions_update 0` 和
-    `psc config enable_module_update 0` 关闭启动期远程检查。
-  - 持续记录启用/禁用 PSCompletions 的启动耗时。
-
 - [ ] **明确 PSCompletions、PSFzf 和 PSReadLine 的职责**
-  - 评估默认关闭 PSFzf `TabExpansion`，保留 Ctrl+t/Ctrl+r/Git 快捷键。
-  - 避免多个组件同时接管 Tab 和补全菜单。
+  - PSC 导入后 Tab 由其 trigger_key 接管（psreadline 的 MenuComplete 仅在
+    PROFILE_NO_COMPLETIONS=1 时生效，见 psreadline.ps1 注释）。
+  - 评估默认关闭 PSFzf `TabExpansion`（当前被 PSC 接管后实际不生效），保留
+    Ctrl+t/Ctrl+r/Git 快捷键；避免多个组件同时接管 Tab 和补全菜单。
 
 - [ ] **增加 Pester、PSScriptAnalyzer 和 CI**
-  - Profile 语法与 smoke test。
+  - Profile 语法与 smoke test（5.1 解析兼容已人工验证，可自动化）。
   - setup 幂等性测试。
   - 外置仓库、Worktree、无符号链接权限场景测试。
   - Wallpaper 使用 mock API 测试错误处理。
@@ -71,6 +54,14 @@
   - 评估将 Wallpaper、LazyVim、Yazi flavor 从基础 Profile 安装流程中独立出来。
   - Profile 中保留轻量 wrapper，具体功能按需安装。
 
+- [ ] **setup 备份目录治理**
+  - `backup-<时间戳>` 目录随重跑 setup 累积（已被 .gitignore 忽略），
+    可考虑保留最近 N 份自动清理。
+
+- [ ] **fnm 启动开销（~68ms）可选跳过**
+  - fnm env 输出含每进程独立路径，无法缓存（见 env.ps1 注释），是 profile
+    自身最大的可控启动成本。可加 `PROFILE_NO_FNM=1` 开关供不用 Node 的场景。
+
 ## 已完成
 
 - [x] 修复 setup 重复运行时重复备份和重建链接的问题。
@@ -84,3 +75,9 @@
 - [x] 增加 PSReadLine 参数能力检测和模块级异常隔离。
 - [x] 改进 wallpaper 下载、超分输出和设置壁纸失败处理。
 - [x] 修正文档中的 `lazy-lock.json`、必需依赖和外部配置数量。
+- [x] 提供 setup 安装模式（`-Minimal`/`-Full`/`-Components`/`-SkipComponents`/`-ExcludeTools` + 交互向导）。
+- [x] 向 PSCompletions 上游提交懒加载 Feature Request——issue #172 已实现并随 v7.3.0 发布
+      （模块初始化延迟到首次补全触发；更新检查改为命令后内联运行）。本仓库冷启动 ~524ms → ~300ms。
+- [x] 降低 PSCompletions 启动成本——上游 v7.3.0 内置懒初始化后已基本解决，
+      剩余为模块 JIT 固有开销（~130ms），勿再自行包装 OnIdle（见 AGENTS.md 例外条款）。
+- [x] 修复 touch 清空已存在文件内容的问题（改为 GNU 语义：存在则只更新时间戳）。
