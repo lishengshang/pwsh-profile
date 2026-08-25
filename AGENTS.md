@@ -37,7 +37,8 @@ Mason LSP、treesitter 产物在各设备 `$env:LOCALAPPDATA\nvim-data` 自动�
    （`aliases.ps1` 的 `__Ensure-TerminalIcons`）、缓存（`init-cache.ps1`）。新工具探测
    一律走入口文件的 `File.Exists` 循环，不要用 `Get-Command`。
    例外：PSCompletions 官方要求全局作用域直接导入（禁止嵌套 `Import-Module`），
-   无法懒加载，冷启动 +~200ms 是官方约束的代价，勿试图"优化"它。
+   但 v7.3.0 起模块内置懒初始化（首次按 Tab 才加载重活），同步导入已很轻，
+   勿再自己包一层 OnIdle。
 2. **三处同步**：新增/移除外部工具时，以下三处必须同时改，缺一不可：
    - `setup.ps1` 的 `$wingetTools` 列表（**并标注 `Component`**，决定它属于哪个安装组件）
    - `docs/reference.md` 的「组件」小节与「依赖工具」表

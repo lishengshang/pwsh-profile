@@ -31,10 +31,12 @@ Unregister-Event -SourceIdentifier PowerShell.OnIdle -ErrorAction SilentlyContin
 # PSCompletions（命令补全）：全局作用域同步加载。
 # 官方文档明确要求：不得在函数/脚本块/事件动作中嵌套调用 Import-Module
 # （否则模块无法正常生效：别名缺失、$PSCompletions 不完整、会话锁死），
-# 必须始终在 $PROFILE 顶层直接导入。因此无法 OnIdle 懒加载，
-# 冷启动 +~200ms 为官方设计约束的代价（见 PSCompletions 文档与 #155/#143）。
+# 必须始终在 $PROFILE 顶层直接导入。无需自己做 OnIdle 懒加载：
+# v7.3.0 起模块内置懒初始化（issue #172），导入只绑定 psc 别名并挂载
+# Tab 键处理器，重活（补全库清单/二进制检查）延迟到首次按 Tab 或首次
+# 调用 psc 时执行，冷启动开销已从 ~330ms 降到 ~100ms 量级（实测）。
 # `*> $null` 吞掉模块内部版本检查的更新横幅（避免每次启动刷屏）；
-# PROFILE_NO_COMPLETIONS=1 完全跳过导入（离线/CI 场景——版本检查有网络请求）。
+# PROFILE_NO_COMPLETIONS=1 完全跳过导入（离线/CI 场景）。
 if (-not $env:PROFILE_NO_COMPLETIONS) {
     Import-Module PSCompletions -ErrorAction SilentlyContinue *> $null
 }
