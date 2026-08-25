@@ -9,7 +9,7 @@
 ```
 Microsoft.PowerShell_profile.ps1   入口：重建 PATH → File.Exists 探测工具 → 按序加载 profile/*.ps1
 profile/init-cache.ps1             工具 init 缓存（必须最先加载）
-profile/env.ps1                    fnm 缓存、EDITOR/VISUAL、fzf 配色
+profile/env.ps1                    fnm（静态兜底+懒加载）、EDITOR/VISUAL、fzf 配色
 profile/prompt.ps1                 starship 提示符（懒加载）
 profile/psreadline.ps1             PSReadLine 配置
 profile/modules.ps1                zoxide 懒加载；PSCompletions / PSFzf
