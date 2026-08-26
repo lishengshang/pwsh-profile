@@ -15,6 +15,11 @@ jobs:
   verify:
     name: ${{ matrix.shell-name }}
     runs-on: windows-latest
+    # 步骤级 steps.shell 字段不允许引用 matrix（静态校验报 Unrecognized
+    # named-value），须在作业级 defaults.run.shell 里统一指定让步骤继承
+    defaults:
+      run:
+        shell: ${{ matrix.shell }}
     strategy:
       fail-fast: false
       matrix:
@@ -30,7 +35,6 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: 语法解析全部 .ps1
-        shell: ${{ matrix.shell }}
         run: |
           $ErrorActionPreference = 'Stop'
           $files = @(Get-ChildItem $env:GITHUB_WORKSPACE -Recurse -Filter *.ps1 |
@@ -51,7 +55,6 @@ jobs:
           Write-Host "语法 OK：$($files.Count) 个 .ps1 文件"
 
       - name: setup.ps1 幂等性（连跑两次，-SkipTools 不装任何东西）
-        shell: ${{ matrix.shell }}
         run: |
           Set-ExecutionPolicy -Scope Process Bypass -Force
           $ErrorActionPreference = 'Stop'
@@ -86,7 +89,6 @@ jobs:
           Write-Host 'setup 幂等性 OK'
 
       - name: profile 冒烟（dot-source 入口 + 核心命令存在性）
-        shell: ${{ matrix.shell }}
         run: |
           Set-ExecutionPolicy -Scope Process Bypass -Force
           $ErrorActionPreference = 'Stop'
