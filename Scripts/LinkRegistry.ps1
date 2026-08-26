@@ -9,7 +9,26 @@
 function Get-LinkRegistryEntries {
     param([Parameter(Mandatory)][string]$Path)
     if (-not (Test-Path $Path)) { return @() }
-    try { return @(Get-Content $Path -Raw | ConvertFrom-Json) }
+    try {
+        $raw = Get-Content $Path -Raw | ConvertFrom-Json
+        # Windows PowerShell 5.1 读取顶层 JSON 数组时，可能把每个属性合并成数组，
+        # 而不是返回对象数组；这里显式展开，避免 Target/Source/LinkType 变成数组。
+        if ($raw -and $raw.Target -is [array]) {
+            $items = @()
+            $targets = @($raw.Target)
+            $sources = @($raw.Source)
+            $types = @($raw.LinkType)
+            for ($i = 0; $i -lt $targets.Count; $i++) {
+                $items += [pscustomobject]@{
+                    Target = [string]$targets[$i]
+                    Source = [string]$sources[$i]
+                    LinkType = [string]$types[$i]
+                }
+            }
+            return $items
+        }
+        return @($raw)
+    }
     catch { return @() }   # 损坏的 JSON 视为空，调用方按未登记处理
 }
 
