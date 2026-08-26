@@ -39,7 +39,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $files = @(Get-ChildItem $env:GITHUB_WORKSPACE -Recurse -Filter *.ps1 |
               Where-Object { $_.FullName -notmatch '\\Modules\\' })
-          if (-not $files.Count) { throw '未找到任何 .ps1 文件' }
+          if (-not $files.Count) { throw 'No PowerShell scripts found' }
           $failed = $false
           foreach ($f in $files) {
               $errs = $null
@@ -48,11 +48,11 @@ jobs:
               if ($errs) {
                   $failed = $true
                   Write-Host "::error file=$($f.FullName.Substring($env:GITHUB_WORKSPACE.Length + 1))::$($errs[0].Message)"
-                  $errs | ForEach-Object { Write-Host "  $($_.Extent.StartLineNumber) 行: $($_.Message)" }
+                  $errs | ForEach-Object { Write-Host "  line $($_.Extent.StartLineNumber): $($_.Message)" }
               }
           }
-          if ($failed) { throw "共 $($files.Count) 个文件中存在语法错误" }
-          Write-Host "语法 OK：$($files.Count) 个 .ps1 文件"
+          if ($failed) { throw "Syntax errors found in $($files.Count) file(s)" }
+          Write-Host "Syntax OK: $($files.Count) PowerShell script(s)"
 
       - name: setup.ps1 幂等性（连跑两次，-SkipTools 不装任何东西）
         run: |
@@ -73,20 +73,20 @@ jobs:
           }
 
           .\setup.ps1 -SkipTools -Yes
-          if ($LASTEXITCODE -ne 0) { throw "第一次 setup 失败 (exit $LASTEXITCODE)" }
+          if (-not $?) { throw 'First setup invocation failed' }
           $entriesAfterFirst = & $countEntries
           $backupsAfterFirst = & $countBackups
 
           # 第二次：不得新建链接、不得新增备份、注册表条目数不得变化
           .\setup.ps1 -SkipTools -Yes
-          if ($LASTEXITCODE -ne 0) { throw "第二次 setup 失败 (exit $LASTEXITCODE)" }
+          if (-not $?) { throw 'Second setup invocation failed' }
           if (& $countEntries -ne $entriesAfterFirst) {
-              throw "注册表条目数变化: $entriesAfterFirst -> $(& $countEntries)（幂等性破坏）"
+              throw "Registry entry count changed: $entriesAfterFirst -> $(& $countEntries)"
           }
           if (& $countBackups -gt $backupsAfterFirst) {
-              throw '第二次 setup 新建了备份目录——把用户配置当成了未管理文件（幂等性破坏）'
+              throw 'Second setup run created a backup directory; idempotency check failed'
           }
-          Write-Host 'setup 幂等性 OK'
+          Write-Host 'setup idempotency OK'
 
       - name: profile 冒烟（dot-source 入口 + 核心命令存在性）
         run: |
@@ -100,16 +100,16 @@ jobs:
                     'touch', 'which', 'unzip', 'mkcd', 'gquick')
           foreach ($name in $need) {
               if (-not (Get-Command $name -ErrorAction Ignore)) {
-                  throw "profile 加载后缺少命令: $name"
+                  throw "Missing command after profile load: $name"
               }
           }
           # eza 缺失时 ll 必须回退为 Get-ChildItem 包装函数（降级路径验证）
-          if (-not (Get-Command ll -ErrorAction Ignore)) { throw '缺少命令: ll' }
-          if (-not (Get-Command prompt -ErrorAction Ignore)) { throw 'prompt 未定义' }
+          if (-not (Get-Command ll -ErrorAction Ignore)) { throw 'Missing command: ll' }
+          if (-not (Get-Command prompt -ErrorAction Ignore)) { throw 'prompt is not defined' }
           # touch GNU 语义回归：已存在文件不得清空内容
           $t = Join-Path $env:TEMP "ci-touch-$PID.txt"
           Set-Content -Path $t -Value 'sentinel'
           touch $t
-          if ((Get-Content $t) -ne 'sentinel') { throw 'touch 清空了已存在文件内容' }
+          if ((Get-Content $t) -ne 'sentinel') { throw 'touch modified existing file contents' }
           Remove-Item $t -Force
-          Write-Host "冒烟 OK：$($need.Count) 个核心命令 + prompt + touch 语义"
+          Write-Host "Smoke test OK: $($need.Count) commands + prompt + touch semantics"
