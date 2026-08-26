@@ -73,8 +73,10 @@ foreach ($e in $entries) {
             $tgt = Get-Item -LiteralPath $e.Target -Force -ErrorAction SilentlyContinue
             $srcFull = [System.IO.Path]::GetFullPath($src).TrimEnd('\')
             if ($tgt) {
-                if ($tgt.LinkType -eq 'SymbolicLink' -and $tgt.Target -and
-                    ([System.IO.Path]::GetFullPath($tgt.Target).TrimEnd('\') -ieq $srcFull)) { continue }
+                # Windows PowerShell 5.1 返回 String[]，取第一个目标再传给 GetFullPath。
+                $tgtTarget = @($tgt.Target) | Select-Object -First 1
+                if ($tgt.LinkType -eq 'SymbolicLink' -and $tgtTarget -and
+                    ([System.IO.Path]::GetFullPath([string]$tgtTarget).TrimEnd('\') -ieq $srcFull)) { continue }
                 if ($tgt.LinkType -or -not $tgt.PSIsContainer) {
                     Remove-Item -LiteralPath $e.Target -Force
                 }
@@ -109,8 +111,10 @@ foreach ($e in $entries) {
             $tgt = Get-Item -LiteralPath $e.Target -Force -ErrorAction SilentlyContinue
             $srcFull = [System.IO.Path]::GetFullPath($src).TrimEnd('\')
             if ($tgt) {
-                if ($tgt.LinkType -eq 'Junction' -and $tgt.Target -and
-                    ([System.IO.Path]::GetFullPath($tgt.Target).TrimEnd('\') -ieq $srcFull)) { continue }
+                # Windows PowerShell 5.1 返回 String[]，取第一个目标再传给 GetFullPath。
+                $tgtTarget = @($tgt.Target) | Select-Object -First 1
+                if ($tgt.LinkType -eq 'Junction' -and $tgtTarget -and
+                    ([System.IO.Path]::GetFullPath([string]$tgtTarget).TrimEnd('\') -ieq $srcFull)) { continue }
                 if ($tgt.LinkType -or -not $tgt.PSIsContainer) {
                     Remove-Item -LiteralPath $e.Target -Force
                 }

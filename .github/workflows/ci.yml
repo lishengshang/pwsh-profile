@@ -80,10 +80,12 @@ jobs:
           # 第二次：不得新建链接、不得新增备份、注册表条目数不得变化
           .\setup.ps1 -SkipTools -Yes
           if (-not $?) { throw 'Second setup invocation failed' }
-          if (& $countEntries -ne $entriesAfterFirst) {
-              throw "Registry entry count changed: $entriesAfterFirst -> $(& $countEntries)"
+          $entriesAfterSecond = & $countEntries
+          if ($entriesAfterSecond -ne $entriesAfterFirst) {
+              throw "Registry entry count changed: $entriesAfterFirst -> $entriesAfterSecond"
           }
-          if (& $countBackups -gt $backupsAfterFirst) {
+          $backupsAfterSecond = & $countBackups
+          if ($backupsAfterSecond -gt $backupsAfterFirst) {
               throw 'Second setup run created a backup directory; idempotency check failed'
           }
           Write-Host 'setup idempotency OK'

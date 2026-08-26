@@ -213,7 +213,9 @@ function Get-ManagedLinkState ([string]$src, [string]$target) {
     if (-not $tgt) { return @{ IsManaged = $false; LinkType = $null } }
     $srcFull = [System.IO.Path]::GetFullPath($src).TrimEnd('\')
     if ($tgt.LinkType -in 'SymbolicLink', 'Junction') {
-        if ($tgt.Target -and ([System.IO.Path]::GetFullPath($tgt.Target).TrimEnd('\') -ieq $srcFull)) {
+        # Windows PowerShell 5.1 返回 String[]，取第一个目标再传给 GetFullPath。
+        $tgtTarget = @($tgt.Target) | Select-Object -First 1
+        if ($tgtTarget -and ([System.IO.Path]::GetFullPath([string]$tgtTarget).TrimEnd('\') -ieq $srcFull)) {
             return @{ IsManaged = $true; LinkType = $tgt.LinkType }
         }
         return @{ IsManaged = $false; LinkType = $null }
