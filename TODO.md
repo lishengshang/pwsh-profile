@@ -14,19 +14,30 @@
 
 ## P1：重要改进
 
-- [ ] **增加链接管理测试套件**
-  - 覆盖 SymbolicLink、Junction、HardLink、Copy、CopyDirectory。
-  - 覆盖断链、错误目标、跨卷降级、重复 setup 和 registry 迁移。
-  - 验收标准：在临时目录中运行 Pester 后，所有部署模式均能通过。
+当前 P1 全部条目已并入下方「进行中：四阶段维护加固计划」。
 
-- [ ] **增加链接注册表损坏恢复机制**
-  - 检测 JSON 解析失败时先备份为 `.corrupt-时间戳`。
-  - 根据 manifest 和当前目标重新构建可恢复的登记信息。
-  - 不应静默覆盖并丢失其他条目。
+## 进行中：四阶段维护加固计划
 
-- [ ] **为链接注册表增加并发锁**
-  - 防止两个 setup/Repair 进程同时读写时相互覆盖登记。
-  - 优先使用命名 Mutex 或单次读取、批量写入策略。
+按阶段推进，每阶段完成后停下确认。已完成阶段 0（仓库卫生：ime.lua 验证提交合并、
+过期分支清理）。
+
+- [ ] **阶段 1：测试与 lint 加固**
+  - [ ] 提取 setup 链接部署循环为可测试函数（`refactor/extract-link-deploy`，
+        新增 `Scripts/Deploy-ConfigLinks.ps1`；`Get-ManagedLinkState` 迁入
+        LinkRegistry.ps1；旧 txt 迁移块提取为 `ConvertFrom-LegacyLinkRegistry`）
+  - [ ] Pester 测试套件：registry 读写 / deploy 幂等与降级 / repair 五类链接
+        （`test/link-pester-suite`，CI 仅 pwsh 矩阵作业运行）
+  - [ ] PSScriptAnalyzer + 违规基线快照，仅新增违规失败（`ci/psa-baseline`，
+        自建快照比对——SSA 无原生 baseline 参数）
+
+- [ ] **阶段 2：注册表健壮性**（`feat/registry-hardening`）
+  - [ ] 损坏恢复：解析失败先备份 `.corrupt-<时间戳>`，按 manifest 与磁盘状态重建
+  - [ ] 并发锁：命名 Mutex 防 setup 与 Repair 同时登记互相覆盖
+  - [ ] 备份目录治理：只清理严格 `backup-<yyyyMMdd-HHmmss>` 命名目录，保留最近 3 份
+
+- [ ] **阶段 3：文档防漂移 CI**（`ci/docs-drift-check`）
+  - [ ] AST 提取 aliases.ps1 函数与 setup.ps1 winget 清单，CI 校验
+        docs/usage.md 与 docs/reference.md 覆盖（代码 ⊆ 文档单向）
 
 ## P2：长期优化
 
@@ -35,12 +46,6 @@
     PROFILE_NO_COMPLETIONS=1 时生效，见 psreadline.ps1 注释）。
   - 评估默认关闭 PSFzf `TabExpansion`（当前被 PSC 接管后实际不生效），保留
     Ctrl+t/Ctrl+r/Git 快捷键；避免多个组件同时接管 Tab 和补全菜单。
-
-- [ ] **增加 Pester、PSScriptAnalyzer 和 CI**
-  - Profile 语法与 smoke test（5.1 解析兼容已人工验证，可自动化）。
-  - setup 幂等性测试。
-  - 外置仓库、Worktree、无符号链接权限场景测试。
-  - Wallpaper 使用 mock API 测试错误处理。
 
 - [ ] **补充链接部署模式文档**
   - 说明 SymbolicLink、Junction、HardLink、Copy、CopyDirectory 的差异。
@@ -53,10 +58,6 @@
 - [ ] **拆分可选个人功能**
   - 评估将 Wallpaper、LazyVim、Yazi flavor 从基础 Profile 安装流程中独立出来。
   - Profile 中保留轻量 wrapper，具体功能按需安装。
-
-- [ ] **setup 备份目录治理**
-  - `backup-<时间戳>` 目录随重跑 setup 累积（已被 .gitignore 忽略），
-    可考虑保留最近 N 份自动清理。
 
 ## 已完成
 
