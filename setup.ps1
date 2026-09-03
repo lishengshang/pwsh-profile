@@ -115,7 +115,7 @@ $effectiveComponents = @($effectiveComponents | Select-Object -Unique)
 
 $repoDir = [System.IO.Path]::GetFullPath($PSScriptRoot).TrimEnd('\')
 $profileDir = [System.IO.Path]::GetFullPath((Split-Path $PROFILE)).TrimEnd('\')
-$backupDir = Join-Path $profileDir "backup-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+# backup-<时间戳> 备份目录由 Invoke-ConfigLinkDeployment 按需创建（返回 BackupDir）
 
 # 管理链接清单（唯一事实来源，Scripts/Get-ManagedLinks.ps1）：
 #   Core 条目部署 $PROFILE 本体（仓库即 $PROFILE 目录时整组跳过）；
@@ -197,70 +197,10 @@ if ($ExcludeTools) {
 }
 
 # 链接注册表（机器本地状态，不入库）：登记 setup 创建/发现的受管目标，
-# Repair-ConfigLinks.ps1 的修复依据。读写函数单源在 Scripts/LinkRegistry.ps1
-# （原子写，防并发损坏）。
+# Repair-ConfigLinks.ps1 的修复依据。读写函数与幂等判定（Get-ManagedLinkState）、
+# 旧 txt 迁移转换单源在 Scripts/LinkRegistry.ps1（原子写，防并发损坏）。
 . (Join-Path $repoDir 'Scripts\LinkRegistry.ps1')
 $__RegistryPath = Join-Path $env:LOCALAPPDATA 'pwsh-profile\linked-targets.json'
-
-# 判定目标是否已由本仓库管理（幂等跳过的依据）。返回 @{ IsManaged; LinkType }：
-#   SymbolicLink/Junction -> Target 属性指向仓库源
-#   HardLink              -> fsutil 同 inode 路径包含仓库源
-#   Copy / CopyDirectory  -> 仅当注册表已登记为该类型且 Source 匹配
-#                            （普通文件再比哈希；内容恰好相同的独立文件不算——
-#                            Hash 相同 ≠ 受本项目管理，避免误跳过建链）
-function Get-ManagedLinkState ([string]$src, [string]$target) {
-    $tgt = Get-Item -LiteralPath $target -Force -ErrorAction SilentlyContinue
-    if (-not $tgt) { return @{ IsManaged = $false; LinkType = $null } }
-    $srcFull = [System.IO.Path]::GetFullPath($src).TrimEnd('\')
-    if ($tgt.LinkType -in 'SymbolicLink', 'Junction') {
-        # Windows PowerShell 5.1 返回 String[]，取第一个目标再传给 GetFullPath。
-        $tgtTarget = @($tgt.Target) | Select-Object -First 1
-        if ($tgtTarget -and ([System.IO.Path]::GetFullPath([string]$tgtTarget).TrimEnd('\') -ieq $srcFull)) {
-            return @{ IsManaged = $true; LinkType = $tgt.LinkType }
-        }
-        return @{ IsManaged = $false; LinkType = $null }
-    }
-    $entry = @(Get-LinkRegistryEntries $__RegistryPath) |
-        Where-Object { $_.Target -ieq $target } | Select-Object -First 1
-    if ($tgt.PSIsContainer) {
-        # 目录仅认可登记过的 CopyDirectory（Junction/SymbolicLink 已在上面处理）
-        if ($entry -and $entry.LinkType -eq 'CopyDirectory' -and
-            (([System.IO.Path]::GetFullPath($entry.Source).TrimEnd('\')) -ieq $srcFull)) {
-            return @{ IsManaged = $true; LinkType = 'CopyDirectory' }
-        }
-        return @{ IsManaged = $false; LinkType = $null }
-    }
-    # 文件：先查 HardLink 关系（fsutil 输出同 inode 全部路径，不带盘符）
-    $srcNorm = ($srcFull -replace '^[A-Za-z]:', '').ToLowerInvariant()
-    $links = (fsutil hardlink list $target 2>$null) |
-        ForEach-Object { (($_ -replace '^[A-Za-z]:', '').TrimEnd('\')).ToLowerInvariant() }
-    if ($links -contains $srcNorm) { return @{ IsManaged = $true; LinkType = 'HardLink' } }
-    # 普通文件：注册表登记为 Copy 且 Source 匹配时，内容一致才算管理
-    if ($entry -and $entry.LinkType -eq 'Copy' -and
-        (([System.IO.Path]::GetFullPath($entry.Source).TrimEnd('\')) -ieq $srcFull)) {
-        if ((Get-FileHash $src -ErrorAction SilentlyContinue).Hash -eq
-            (Get-FileHash $target -ErrorAction SilentlyContinue).Hash) {
-            return @{ IsManaged = $true; LinkType = 'Copy' }
-        }
-    }
-    return @{ IsManaged = $false; LinkType = $null }
-}
-
-function Test-SymlinkAvailable {
-    $tmp = [System.IO.Path]::GetTempFileName()
-    $link = "$tmp-link"
-    try {
-        $null = New-Item -ItemType SymbolicLink -Path $link -Target $tmp -ErrorAction Stop
-        return $true
-    }
-    catch {
-        return $false
-    }
-    finally {
-        Remove-Item $tmp -ErrorAction SilentlyContinue
-        Remove-Item $link -ErrorAction SilentlyContinue
-    }
-}
 
 function Install-DepTools {
     $winget = Get-Command winget -ErrorAction SilentlyContinue
@@ -373,105 +313,17 @@ if ($repoDir -ieq $profileDir) {
     $linkItems = @($linkItems | Where-Object { -not $_.Core })
 }
 
-$useSymlink = Test-SymlinkAvailable
-if (-not $useSymlink) {
-    Write-Warning '当前环境不支持符号链接（需管理员权限或开发者模式），目录将回退 Junction、文件回退 HardLink，仍失败才复制。'
-}
-
 # 链接必须在 Initialize-LazyVim 之后建立（nvim/ 目录要先存在）；仅 editor 组件引入
 if ($effectiveComponents -contains 'editor') { Initialize-LazyVim }
 
-$backupCreated = $false
-$copyDeployed = $false
-foreach ($item in $linkItems) {
-    $src = Join-Path $repoDir $item.Source
-    if (-not (Test-Path $src)) {
-        Write-Host "跳过（不存在）: $src" -ForegroundColor DarkGray
-        continue
-    }
-
-    # 幂等：目标已是受管链接/副本时跳过，并补登记（注册表丢失/手工建的正确
-    # 链接也能恢复 Repair 的修复能力）
-    $state = Get-ManagedLinkState $src $item.Target
-    if ($state.IsManaged) {
-        Write-Host "已是正确链接，跳过: $($item.Target)" -ForegroundColor DarkGray
-        Set-LinkRegistryEntry -Path $__RegistryPath -Target $item.Target -Source $src -LinkType $state.LinkType
-        continue
-    }
-
-    # Get-Item -Force 能拿到断链对象（指向已不存在目标的符号链接/Junction，
-    # Test-Path 对断链文件返回 False 但对象仍占用路径，不清理则 New-Item 失败）
-    $existing = Get-Item -LiteralPath $item.Target -Force -ErrorAction SilentlyContinue
-    if ($existing) {
-        if ($item.SkipIfExists) {
-            Write-Host "已存在，跳过: $($item.Target)" -ForegroundColor DarkGray
-            continue
-        }
-        $isBrokenLink = $existing.LinkType -and -not (Test-Path -LiteralPath $item.Target)
-        if ($isBrokenLink) {
-            # 断链对象不含用户可读数据，直接清理后重建
-            Remove-Item -LiteralPath $item.Target -Force
-            Write-Host "已清理失效链接: $($item.Target)" -ForegroundColor DarkGray
-        }
-        else {
-            # 普通文件/目录，或指向别处的有效链接：均视为用户现有配置，先备份
-            if (-not $backupCreated) {
-                New-Item -ItemType Directory -Path $backupDir -Force | Out-Null
-                $backupCreated = $true
-            }
-            $name = Split-Path $item.Target -Leaf
-            Move-Item -LiteralPath $item.Target -Destination (Join-Path $backupDir $name) -Force
-            Write-Host "已备份: $($item.Target) -> $backupDir\$name" -ForegroundColor DarkYellow
-        }
-    }
-
-    $parent = Split-Path $item.Target
-    if (-not (Test-Path $parent)) {
-        New-Item -ItemType Directory -Path $parent -Force | Out-Null
-    }
-
-    if ($useSymlink) {
-        $null = New-Item -ItemType SymbolicLink -Path $item.Target -Target $src -Force
-        Write-Host "已链接: $($item.Source) -> $($item.Target)" -ForegroundColor Green
-        Set-LinkRegistryEntry -Path $__RegistryPath -Target $item.Target -Source $src -LinkType 'SymbolicLink'
-    }
-    else {
-        # 无符号链接权限时的回退：目录用 Junction、文件用 HardLink（均无需特权，
-        # 且和符号链接一样「仓库即实体」，保证改仓库文件即刻生效、不产生两份副本）
-        $isDir = (Get-Item $src).PSIsContainer
-        $linked = $false
-        if ($isDir) {
-            try {
-                $null = New-Item -ItemType Junction -Path $item.Target -Target $src -ErrorAction Stop
-                $linked = $true
-            } catch { }
-        }
-        else {
-            try {
-                $null = New-Item -ItemType HardLink -Path $item.Target -Target $src -ErrorAction Stop
-                $linked = $true
-            } catch { }
-        }
-        if ($linked) {
-            $linkType = if ($isDir) { 'Junction' } else { 'HardLink' }
-            Write-Host "已链接($($(if ($isDir) {'junction'} else {'hardlink'}))): $($item.Source) -> $($item.Target)" -ForegroundColor Green
-            Set-LinkRegistryEntry -Path $__RegistryPath -Target $item.Target -Source $src -LinkType $linkType
-            continue
-        }
-        # 最终回退：Copy 模式（不实时同步；文件由 Repair 按哈希刷新、
-        # 目录由 Repair 用 robocopy 镜像同步，psync 拉取后自动对齐）
-        if ((Get-Item $src).PSIsContainer) {
-            Copy-Item -Path $src -Destination $item.Target -Recurse -Force
-            Set-LinkRegistryEntry -Path $__RegistryPath -Target $item.Target -Source $src -LinkType 'CopyDirectory'
-        }
-        else {
-            Copy-Item -Path $src -Destination $item.Target -Force
-            Set-LinkRegistryEntry -Path $__RegistryPath -Target $item.Target -Source $src -LinkType 'Copy'
-        }
-        $copyDeployed = $true
-        Write-Host "已复制: $($item.Source) -> $($item.Target)" -ForegroundColor Green
-    }
-}
+# 部署循环单源在 Scripts/Deploy-ConfigLinks.ps1（符号链接探测、备份接管、
+# Junction/HardLink/Copy 回退链与注册表登记），供 Pester 直接测试
+. (Join-Path $repoDir 'Scripts\Deploy-ConfigLinks.ps1')
+$deploy = Invoke-ConfigLinkDeployment -Items $linkItems -RepoDir $repoDir `
+    -RegistryPath $__RegistryPath -BackupRoot $profileDir
+$backupCreated = $deploy.BackupCreated
+$copyDeployed  = $deploy.CopyDeployed
+$backupDir     = $deploy.BackupDir
 
 # 修复历史断链（幂等；对已完好的链接无操作）
 & (Join-Path $repoDir 'Scripts\Repair-ConfigLinks.ps1')
