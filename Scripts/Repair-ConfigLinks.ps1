@@ -27,30 +27,10 @@ $legacyTxt = Join-Path (Split-Path $Registry) 'linked-targets.txt'
 # ---- 读取注册表（旧 txt 自动迁移） ----
 $entries = @(Get-LinkRegistryEntries $Registry)
 if (-not $entries -and (Test-Path $legacyTxt)) {
-    # 旧格式只有 Target 路径：Source 从清单推断；类型按实际状态判断——
-    # LinkType 属性（符号链接/Junction）、fsutil 确认 HardLink 关系，
-    # 都不是则普通文件按 Copy、普通目录按 CopyDirectory（宁降级勿误判）
+    # 旧格式只有 Target 路径：Source 从清单推断、类型按磁盘状态判断，
+    # 迁移转换单源在 LinkRegistry.ps1 的 ConvertFrom-LegacyLinkRegistry
     $manifest = @(. (Join-Path $PSScriptRoot 'Get-ManagedLinks.ps1'))
-    foreach ($t in (Get-Content $legacyTxt -ErrorAction SilentlyContinue)) {
-        if (-not $t) { continue }
-        $m = $manifest | Where-Object { $_.Target -ieq $t }
-        if (-not $m) { continue }   # 清单中已不存在的旧条目，放弃迁移
-        $src = Join-Path $repoDir $m.Source
-        $item = Get-Item -LiteralPath $t -Force -ErrorAction SilentlyContinue
-        $type = $item.LinkType
-        if (-not $type -and $item) {
-            if ($item.PSIsContainer) {
-                $type = 'CopyDirectory'
-            }
-            else {
-                $srcNorm = ((Get-Item $src).FullName.TrimEnd('\')) -replace '^[A-Za-z]:', ''
-                $links = (fsutil hardlink list $t 2>$null) |
-                    ForEach-Object { ($_ -replace '^[A-Za-z]:', '').Trim() }
-                $type = if ($links -contains $srcNorm) { 'HardLink' } else { 'Copy' }
-            }
-        }
-        $entries += [pscustomobject]@{ Target = $t; Source = $src; LinkType = $type }
-    }
+    $entries = @(ConvertFrom-LegacyLinkRegistry -LegacyTxt $legacyTxt -Manifest $manifest -RepoDir $repoDir)
     Save-LinkRegistryEntries -Path $Registry -Entries $entries
     Remove-Item $legacyTxt -Force -ErrorAction SilentlyContinue
 }
