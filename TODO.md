@@ -28,8 +28,10 @@
   - [x] Pester 测试套件：registry 读写 / deploy 幂等与降级 / repair 五类链接
         （`test/link-pester-suite`，CI 仅 pwsh 矩阵作业运行；附带修复断链
         junction 判定跨版本不一致——PS7 下被误备份而非清理）
-  - [ ] PSScriptAnalyzer + 违规基线快照，仅新增违规失败（`ci/psa-baseline`，
-        自建快照比对——SSA 无原生 baseline 参数）
+  - [x] PSScriptAnalyzer 门禁：仅新增违规失败（`ci/psa-baseline`）。
+        快照取自基线提交（PR 取目标分支 tip、push 取上一提交）——对变更过的
+        .ps1 比较当前与基线版本的按规则计数，新增即失败，存量放行且无需
+        入库快照文件；豁免清单在 Scripts/Compare-PsaBaseline.ps1 头部
 
 - [ ] **阶段 2：注册表健壮性**（`feat/registry-hardening`）
   - [ ] 损坏恢复：解析失败先备份 `.corrupt-<时间戳>`，按 manifest 与磁盘状态重建
