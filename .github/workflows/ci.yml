@@ -3,6 +3,7 @@
 #   1. 全仓库 .ps1 语法解析（5.1 兼容红线：禁 ?. / ?? 等 PS7 专属语法）
 #   2. profile 冒烟（入口 dot-source + 核心命令存在性——依赖优雅降级，CI 裸环境可跑）
 #   3. setup.ps1 幂等性（-SkipTools -Yes 连跑两次，第二次应全部跳过）
+#   4. Pester 测试套件（tests/，仅 pwsh 矩阵作业运行）
 # PSScriptAnalyzer 待 baseline 建立后追加（见 TODO.md）。
 name: CI
 
@@ -115,3 +116,23 @@ jobs:
           if ((Get-Content $t) -ne 'sentinel') { throw 'touch modified existing file contents' }
           Remove-Item $t -Force
           Write-Host "Smoke test OK: $($need.Count) commands + prompt + touch semantics"
+
+      - name: Pester 测试套件（仅 pwsh 矩阵作业运行）
+        if: matrix.shell == 'pwsh'
+        run: |
+          Set-Location $env:GITHUB_WORKSPACE
+          $pester = Get-Module Pester -ListAvailable |
+              Where-Object { $_.Version -ge [version]'5.0.0' } |
+              Sort-Object Version -Descending | Select-Object -First 1
+          if (-not $pester) {
+              Install-Module Pester -MinimumVersion 5.0 -Force -Scope CurrentUser -SkipPublisherCheck
+          }
+          Import-Module Pester -MinimumVersion 5.0
+          $config = [PesterConfiguration]::Default
+          $config.Run.Path = Join-Path $env:GITHUB_WORKSPACE 'tests'
+          $config.Output.Verbosity = 'Normal'
+          $result = Invoke-Pester -Configuration $config
+          if ($result.FailedCount -gt 0) {
+              throw "Pester failed: $($result.FailedCount) test(s), $($result.PassedCount) passed"
+          }
+          Write-Host "Pester OK: $($result.PassedCount) test(s) passed"

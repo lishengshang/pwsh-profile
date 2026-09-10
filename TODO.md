@@ -25,8 +25,9 @@
   - [ ] 提取 setup 链接部署循环为可测试函数（`refactor/extract-link-deploy`，
         新增 `Scripts/Deploy-ConfigLinks.ps1`；`Get-ManagedLinkState` 迁入
         LinkRegistry.ps1；旧 txt 迁移块提取为 `ConvertFrom-LegacyLinkRegistry`）
-  - [ ] Pester 测试套件：registry 读写 / deploy 幂等与降级 / repair 五类链接
-        （`test/link-pester-suite`，CI 仅 pwsh 矩阵作业运行）
+  - [x] Pester 测试套件：registry 读写 / deploy 幂等与降级 / repair 五类链接
+        （`test/link-pester-suite`，CI 仅 pwsh 矩阵作业运行；附带修复断链
+        junction 判定跨版本不一致——PS7 下被误备份而非清理）
   - [ ] PSScriptAnalyzer + 违规基线快照，仅新增违规失败（`ci/psa-baseline`，
         自建快照比对——SSA 无原生 baseline 参数）
 
