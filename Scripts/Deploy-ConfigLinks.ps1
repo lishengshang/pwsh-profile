@@ -61,14 +61,21 @@ function Invoke-ConfigLinkDeployment {
         }
 
         # Get-Item -Force 能拿到断链对象（指向已不存在目标的符号链接/Junction，
-        # Test-Path 对断链文件返回 False 但对象仍占用路径，不清理则 New-Item 失败）
+        # 不清理则 New-Item 失败）
         $existing = Get-Item -LiteralPath $item.Target -Force -ErrorAction SilentlyContinue
         if ($existing) {
             if ($item.SkipIfExists) {
                 Write-Host "已存在，跳过: $($item.Target)" -ForegroundColor DarkGray
                 continue
             }
-            $isBrokenLink = $existing.LinkType -and -not (Test-Path -LiteralPath $item.Target)
+            # 断链判定不能用 Test-Path $item.Target：5.1 对断链返回 False、
+            # 7.x 对断链 junction 可能返回 True（版本行为不一致）。改为检查
+            # 链接目标路径是否存在（5.1 的 .Target 是 String[]，取第一个）。
+            $isBrokenLink = $false
+            if ($existing.LinkType) {
+                $linkTarget = @($existing.Target) | Select-Object -First 1
+                $isBrokenLink = $linkTarget -and -not (Test-Path -LiteralPath ([string]$linkTarget))
+            }
             if ($isBrokenLink) {
                 # 断链对象不含用户可读数据，直接清理后重建
                 Remove-Item -LiteralPath $item.Target -Force
