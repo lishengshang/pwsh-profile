@@ -14,6 +14,8 @@
 | `lg` | lazygit 终端 git UI（LazyVim 内 `<leader>gg` 调起浮窗） |
 | `cat` / `grep` / `find` | bat / ripgrep / fd（缺失时依次回退内置命令；`find.exe` 仍可显式调用） |
 | `touch <file>` / `which <cmd>` / `unzip <file>` | 新建文件 / 查命令路径 / 7z 解压 |
+| `hashcheck <file> [期望哈希]` | 哈希校验：粘贴期望值即按长度自动识别算法（md5/sha1/sha256/sha384/sha512，`-Algorithm` 可指定）并比对给结论；不带期望值则计算 SHA256 并复制到剪贴板 |
+| `hashadd <file...> [-Algorithm md5]` | 为文件生成旁挂校验文件（GNU 格式「哈希  文件名」，默认 SHA256，支持通配符）；Linux 可直接 `sha256sum -c` 核对 |
 
 ## Git
 
