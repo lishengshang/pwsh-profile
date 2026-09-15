@@ -4,7 +4,7 @@
 #   2. profile 冒烟（入口 dot-source + 核心命令存在性——依赖优雅降级，CI 裸环境可跑）
 #   3. setup.ps1 幂等性（-SkipTools -Yes 连跑两次，第二次应全部跳过）
 #   4. Pester 测试套件（tests/，仅 pwsh 矩阵作业运行）
-# PSScriptAnalyzer 待 baseline 建立后追加（见 TODO.md）。
+#   5. PSScriptAnalyzer 新增违规门禁（基线提交快照比对，仅 pwsh 矩阵作业运行）
 name: CI
 
 on:
@@ -136,3 +136,18 @@ jobs:
               throw "Pester failed: $($result.FailedCount) test(s), $($result.PassedCount) passed"
           }
           Write-Host "Pester OK: $($result.PassedCount) test(s) passed"
+
+      - name: PSScriptAnalyzer 新增违规门禁（与基线提交比对）
+        if: matrix.shell == 'pwsh'
+        env:
+          # PR 以目标分支 tip 为基线；push 以上一提交为基线（首次推送为全零则跳过）
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          Set-Location $env:GITHUB_WORKSPACE
+          if (-not $env:BASE_SHA -or $env:BASE_SHA -like '0000000*') {
+              Write-Host 'PSA 门禁：无基线提交（首次推送），跳过比对'
+              exit 0
+          }
+          # 浅检出下补齐基线提交对象（比对树所需）
+          git fetch --no-tags --depth=1 origin $env:BASE_SHA
+          .\Scripts\Compare-PsaBaseline.ps1 -BaseSha $env:BASE_SHA
