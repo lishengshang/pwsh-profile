@@ -68,7 +68,8 @@ foreach ($rel in $changed) {
     # 取基线提交里的文件版本到临时文件（保留原文件名以辅助解析器）
     $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("psa-base-" + [guid]::NewGuid().ToString('N') + '-' + (Split-Path $rel -Leaf))
     $base = @{}
-    if (git cat-file -e "$($BaseSha):$rel" 2>$null) {
+    # ls-tree 命中时输出路径（真值），未命中时无输出——cat-file -e 成功时无输出，用输出做条件恒为假
+    if (git ls-tree --name-only "$BaseSha" -- "$rel") {
         git show "$($BaseSha):$rel" | Out-File -FilePath $tmp -Encoding utf8
         $base = Get-ViolationCountByRule -Path $tmp
     }
