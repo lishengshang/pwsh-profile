@@ -335,6 +335,86 @@ function codehere {
 }
 Set-Alias -Name ch -Value codehere
 
+# 哈希校验: hashcheck <文件> [<期望哈希>] [-Algorithm md5|sha1|sha256|sha384|sha512]
+# 期望哈希按长度自动识别算法(32=MD5 40=SHA1 64=SHA256 96=SHA384 128=SHA512)，省略期望值则计算并复制到剪贴板
+function hashcheck {
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [string]$Expected,
+        [ValidateSet('MD5', 'SHA1', 'SHA256', 'SHA384', 'SHA512')][string]$Algorithm
+    )
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        Write-Host "未找到文件: $Path" -ForegroundColor Yellow
+        return
+    }
+    if ($Algorithm) {
+        $algoName = $Algorithm
+    } elseif (-not $Expected) {
+        $algoName = 'SHA256'
+    } else {
+        switch ($Expected.Trim().Length) {
+            32   { $algoName = 'MD5' }
+            40   { $algoName = 'SHA1' }
+            64   { $algoName = 'SHA256' }
+            96   { $algoName = 'SHA384' }
+            128  { $algoName = 'SHA512' }
+            default {
+                Write-Host '无法按长度识别算法，请用 -Algorithm 指定: md5/sha1/sha256/sha384/sha512' -ForegroundColor Yellow
+                return
+            }
+        }
+    }
+    $actual = (Get-FileHash -LiteralPath $Path -Algorithm $algoName).Hash
+    if (-not $Expected) {
+        Set-Clipboard -Value $actual
+        Write-Host "[$algoName] $actual" -ForegroundColor Cyan
+        Write-Host '已复制到剪贴板' -ForegroundColor DarkGray
+        return
+    }
+    if ($actual -ieq $Expected.Trim()) {
+        Write-Host "✓ 匹配（$algoName）" -ForegroundColor Green
+    } else {
+        Write-Host "✗ 不匹配（$algoName）" -ForegroundColor Red
+        Write-Host "  期望: $($Expected.Trim())" -ForegroundColor DarkGray
+        Write-Host "  实际: $actual" -ForegroundColor DarkGray
+    }
+}
+
+# 哈希清单: hashadd <文件...> [-Algorithm md5|sha1|sha256|sha384|sha512]
+# 为每个文件生成旁挂校验文件（GNU 格式「哈希  文件名」，默认 SHA256），支持通配符
+function hashadd {
+    param(
+        [Parameter(Mandatory)][string[]]$Path,
+        [ValidateSet('MD5', 'SHA1', 'SHA256', 'SHA384', 'SHA512')][string]$Algorithm = 'SHA256'
+    )
+    $ext = '.' + $Algorithm.ToLower()
+    $count = 0
+    foreach ($p in $Path) {
+        $targets = Get-Item -Path $p -ErrorAction SilentlyContinue
+        foreach ($f in $targets) {
+            if ($f.PSIsContainer) {
+                Write-Host "跳过目录: $($f.Name)" -ForegroundColor DarkGray
+                continue
+            }
+            if ($f.Name -match '\.(sha256|sha384|sha512|sha1|md5)$') {
+                Write-Host "跳过校验文件: $($f.Name)" -ForegroundColor DarkGray
+                continue
+            }
+            $hash = (Get-FileHash -LiteralPath $f.FullName -Algorithm $Algorithm).Hash
+            $dest = Join-Path $f.DirectoryName ($f.Name + $ext)
+            # LF 行尾 + UTF-8 无 BOM，保证 Linux 的 sha256sum -c 能直接核对（CRLF 会被当成文件名的一部分）
+            [System.IO.File]::WriteAllText($dest, "$hash  $($f.Name)`n")
+            Write-Host "[$Algorithm] $($f.Name)" -ForegroundColor Cyan
+            $count++
+        }
+    }
+    if ($count) {
+        Write-Host "已生成 $count 个校验文件（Linux 核对: sha256sum -c；本机核对: hashcheck）" -ForegroundColor DarkGray
+    } else {
+        Write-Host '未找到可处理的文件' -ForegroundColor Yellow
+    }
+}
+
 # ==============================================================
 # 自定义脚本（使用相对路径，避免硬编码）
 # ==============================================================
