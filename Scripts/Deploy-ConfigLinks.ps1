@@ -23,6 +23,24 @@ function Test-SymlinkAvailable {
     }
 }
 
+# 备份目录治理：BackupRoot 下严格匹配 backup-<yyyyMMdd-HHmmss> 的目录视为
+# 本脚本创建的备份（时间戳可按字典序排序），保留最近 $Keep 份，其余删除。
+# 命名不完全一致的 backup-* 目录（用户手工备份、旧版产物）一律不碰。
+function Remove-StaleLinkBackup {
+    param(
+        [Parameter(Mandatory)][string]$BackupRoot,
+        [int]$Keep = 3
+    )
+    $dirs = @(Get-ChildItem -LiteralPath $BackupRoot -Filter 'backup-*' -Directory -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -cmatch '^backup-\d{8}-\d{6}$' } |
+        Sort-Object -Property Name -Descending)
+    if ($dirs.Count -le $Keep) { return }
+    foreach ($d in ($dirs | Select-Object -Skip $Keep)) {
+        Remove-Item -LiteralPath $d.FullName -Recurse -Force -ErrorAction SilentlyContinue
+        Write-Host "已清理旧备份: $($d.Name)" -ForegroundColor DarkGray
+    }
+}
+
 function Invoke-ConfigLinkDeployment {
     param(
         # Get-ManagedLinks 条目（调用方已按组件过滤）
@@ -140,6 +158,9 @@ function Invoke-ConfigLinkDeployment {
             Write-Host "已复制: $($item.Source) -> $($item.Target)" -ForegroundColor Green
         }
     }
+
+    # 备份目录治理：无论本次是否新建备份都执行，清理历史遗留（保留最近 3 份）
+    Remove-StaleLinkBackup -BackupRoot $BackupRoot
 
     return @{
         BackupCreated = $backupCreated

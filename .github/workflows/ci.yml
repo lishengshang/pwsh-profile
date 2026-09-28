@@ -130,6 +130,10 @@ jobs:
           Import-Module Pester -MinimumVersion 5.0
           $config = [PesterConfiguration]::Default
           $config.Run.Path = Join-Path $env:GITHUB_WORKSPACE 'tests'
+          # 用 -Configuration 传参时，返回对象由 Run.PassThru 控制（命令行
+          # -PassThru 被忽略）；Pester 6 起默认不返回，下方 FailedCount 判空
+          # 恒假会静默放行失败。该配置项 Pester 5 同样支持
+          $config.Run.PassThru = $true
           $config.Output.Verbosity = 'Normal'
           $result = Invoke-Pester -Configuration $config
           if ($result.FailedCount -gt 0) {

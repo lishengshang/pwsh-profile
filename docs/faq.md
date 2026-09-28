@@ -24,3 +24,9 @@
 ## yazi 提示找不到 `file` 做 MIME 检测？
 
 profile 启动时自动探测 Git 自带的 `file.exe` 并设置 `YAZI_FILE_ONE`。确认：`echo $env:YAZI_FILE_ONE` 应指向 Git 目录下 `usr\bin\file.exe`；Git 装在非常规位置探测不到时手动设置该变量。
+
+## 链接注册表（linked-targets.json）损坏了怎么办？
+
+无需手动处理。`Repair-ConfigLinks`（`psync` / `setup` 自动调用）检测到 JSON 解析失败时，会先把损坏文件备份为 `linked-targets.json.corrupt-<时间戳>`，再按链接清单与磁盘实际状态重建——只认领有磁盘证据的符号链接 / Junction / 硬链接；Copy 类登记随损坏丢失，下次运行 `setup` 时按未登记目标重新接管并升级为链接，属预期行为。
+
+另外 setup 创建的备份目录（`backup-<时间戳>`）只保留最近 3 份，更早的自动清理；命名不完全一致的 `backup-*` 目录视为手工备份，永远不会被碰。

@@ -33,10 +33,15 @@
         .ps1 比较当前与基线版本的按规则计数，新增即失败，存量放行且无需
         入库快照文件；豁免清单在 Scripts/Compare-PsaBaseline.ps1 头部
 
-- [ ] **阶段 2：注册表健壮性**（`feat/registry-hardening`）
-  - [ ] 损坏恢复：解析失败先备份 `.corrupt-<时间戳>`，按 manifest 与磁盘状态重建
-  - [ ] 并发锁：命名 Mutex 防 setup 与 Repair 同时登记互相覆盖
-  - [ ] 备份目录治理：只清理严格 `backup-<yyyyMMdd-HHmmss>` 命名目录，保留最近 3 份
+- [x] **阶段 2：注册表健壮性**（`feat/registry-hardening`）
+  - [x] 损坏恢复：解析失败先备份 `.corrupt-<时间戳>`，按 manifest 与磁盘状态重建
+        （Restore-LinkRegistry，只认领有磁盘证据的链接，Copy 登记随损坏丢失、
+        由下次 setup 重新接管升级为链接）
+  - [x] 并发锁：命名 Mutex 防 setup 与 Repair 同时登记互相覆盖
+        （__Invoke-WithLinkRegistryLock 串行化 Set-LinkRegistryEntry 读改写与
+        迁移/重建落盘；创建失败或超时降级为不加锁继续）
+  - [x] 备份目录治理：只清理严格 `backup-<yyyyMMdd-HHmmss>` 命名目录，保留最近 3 份
+        （Remove-StaleLinkBackup，部署结束后执行；大小写或格式不一致的一律不碰）
 
 - [ ] **阶段 3：文档防漂移 CI**（`ci/docs-drift-check`）
   - [ ] AST 提取 aliases.ps1 函数与 setup.ps1 winget 清单，CI 校验
