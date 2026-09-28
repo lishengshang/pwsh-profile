@@ -22,7 +22,7 @@
 过期分支清理）。
 
 - [ ] **阶段 1：测试与 lint 加固**
-  - [ ] 提取 setup 链接部署循环为可测试函数（`refactor/extract-link-deploy`，
+  - [x] 提取 setup 链接部署循环为可测试函数（`refactor/extract-link-deploy`，
         新增 `Scripts/Deploy-ConfigLinks.ps1`；`Get-ManagedLinkState` 迁入
         LinkRegistry.ps1；旧 txt 迁移块提取为 `ConvertFrom-LegacyLinkRegistry`）
   - [x] Pester 测试套件：registry 读写 / deploy 幂等与降级 / repair 五类链接

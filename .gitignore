@@ -19,6 +19,12 @@ backup-*/
 *zoxide-init-cache*
 *fnm-init-cache*
 
+# PowerShell 重定向事故产物：cmd 下执行 `命令 > $null` 会生成字面量 $null 文件
+$null
+
+# PSResourceGet / Install-Script 的运行时清单目录（位于 Scripts/ 下，不入库）
+Scripts/InstalledScriptInfos/
+
 # AI 工具本地状态（会话/计划等运行时数据，不属于项目约定）
 # 注意：AGENTS.md、CLAUDE.md 是要提交的约定文件；.trae/rules/ 同为约定目录，
 # 用否定模式保留跟踪（仅忽略 .trae 下其他内容）
