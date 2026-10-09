@@ -56,13 +56,17 @@ jobs:
           if ($failed) { throw "Syntax errors found in $($files.Count) file(s)" }
           Write-Host "Syntax OK: $($files.Count) PowerShell script(s)"
 
-      - name: setup.ps1 幂等性（连跑两次，-SkipTools 不装任何东西）
+      # 幂等性用状态判定而非输出匹配：Write-Host 走信息流无法可靠捕获（5.1 下完全
+      # 不可捕获），输出匹配是空转断言。第二次运行不得新建链接、不得新增备份、
+      # 注册表条目数不得变化。
+      # 注意：本作业矩阵含 Windows PowerShell 5.1，Actions 生成的 run 脚本是无 BOM 的
+      # UTF-8，5.1 按 GBK 解码——run 块内出现中文时，乱码字节可能吞掉收尾引号或换行，
+      # 直接报语法错误。故 run 块内代码与提示一律 ASCII，中文说明写在这里。
+      - name: setup.ps1 idempotency (run twice with -SkipTools)
         run: |
           Set-ExecutionPolicy -Scope Process Bypass -Force
           $ErrorActionPreference = 'Stop'
           Set-Location $env:GITHUB_WORKSPACE
-          # 幂等性用状态判定而非输出匹配：Write-Host 走信息流无法可靠捕获
-          # （5.1 下完全不可捕获），输出匹配是空转断言
           $regPath = Join-Path $env:LOCALAPPDATA 'pwsh-profile\linked-targets.json'
           $countEntries = {
               if (Test-Path $regPath) {
@@ -79,7 +83,6 @@ jobs:
           $entriesAfterFirst = & $countEntries
           $backupsAfterFirst = & $countBackups
 
-          # 第二次：不得新建链接、不得新增备份、注册表条目数不得变化
           .\setup.ps1 -SkipTools -Yes
           if (-not $?) { throw 'Second setup invocation failed' }
           $entriesAfterSecond = & $countEntries
@@ -92,23 +95,24 @@ jobs:
           }
           Write-Host 'setup idempotency OK'
 
-      - name: profile 冒烟（dot-source 入口 + 命令类型断言）
+      # 入口用 $PSScriptRoot 定位子模块，仓库内直接 dot-source 即可；CI 无外部工具，
+      # 全链路走优雅降级路径（本身就是被测行为之一）。
+      # 断言命令类型而非仅存在性：命令解析优先级为 Alias > Function，只判 Get-Command
+      # 非空会让被内置别名遮蔽的名字（如 gcm→Get-Command）恒真通过——历史事故：git
+      # 简写 gcm/gc/gp/gl/gcb 定义后全程不可用而 CI 全绿。
+      # 清单只收录无条件定义的名字：cat/find/y/lg 随外部工具是否存在才定义，不在此列；
+      # grep 同样不列——runner 自带 Git 的 grep.exe，profile 有意不覆盖真实 grep。
+      # run 块内一律 ASCII（原因见上面 setup 步骤的说明）。
+      - name: profile smoke (dot-source entry + command type assertions)
         run: |
           Set-ExecutionPolicy -Scope Process Bypass -Force
           $ErrorActionPreference = 'Stop'
           Set-Location $env:GITHUB_WORKSPACE
-          # 入口用 $PSScriptRoot 定位子模块，仓库内直接 dot-source 即可；
-          # CI 无外部工具，全链路走优雅降级路径（本身就是被测行为之一）
           . .\Microsoft.PowerShell_profile.ps1
 
-          # 断言命令类型而非仅存在性：命令解析优先级为 Alias > Function，
-          # 只判 Get-Command 非空会让被内置别名遮蔽的名字（如 gcm→Get-Command）
-          # 恒真通过——历史事故：git 简写 gcm/gc/gp/gl/gcb 定义后全程不可用而 CI 全绿
-          # 清单只收录无条件定义的名字；随外部工具存在与否才定义的
-          # （cat/find/y/lg）不在此列，条件分支由各自降级路径断言覆盖
           $needFunction = @(
               '..', '...', '....', 'mkcd', 'ls', 'll', 'la', 'lt', 'llt',
-              'profile-edit', 'psync', 'touch', 'which', 'grep', 'unzip',
+              'profile-edit', 'psync', 'touch', 'which', 'unzip',
               'gs', 'ga', 'gaa', 'gpl', 'gd', 'gds', 'gco', 'gb', 'gst',
               'grs', 'gbn', 'gquick', 'glog', 'gup', 'gclean',
               'ps-reboot', 'ps-shutdown', 'ps-hibernate', 'ps-suspend', 'ps-lock',
@@ -118,13 +122,13 @@ jobs:
           $bad = @()
           foreach ($name in $needFunction) {
               $cmd = Get-Command $name -ErrorAction Ignore
-              if (-not $cmd) { $bad += "$name（profile 加载后缺失）"; continue }
+              if (-not $cmd) { $bad += "$name (missing after profile load)"; continue }
               if ($cmd.CommandType -ne 'Function') {
-                  $bad += "$name（解析为 $($cmd.CommandType)，疑似被内置别名遮蔽）"
+                  $bad += "$name (resolved as $($cmd.CommandType), likely shadowed by a built-in alias)"
               }
           }
 
-          # profile 自有别名须为 Alias 且解析到本仓库的实现函数
+          # profile's own aliases must resolve to this repo's implementation functions
           $needAlias = @{
               ep = 'profile-edit'; ch = 'codehere'; lock = 'ps-lock'
               myip = 'Get-PublicIP'; portof = 'Get-PortProcess'; killport = 'Stop-Port'
@@ -132,21 +136,21 @@ jobs:
           foreach ($name in $needAlias.Keys) {
               $cmd = Get-Command $name -ErrorAction Ignore
               if (-not $cmd -or $cmd.CommandType -ne 'Alias') {
-                  $bad += "$name（应为指向 $($needAlias[$name]) 的别名）"; continue
+                  $bad += "$name (expected an alias pointing to $($needAlias[$name]))"; continue
               }
               $resolved = $cmd.ResolvedCommand
               if (-not $resolved -or $resolved.Name -ne $needAlias[$name]) {
-                  $bad += "$name（别名未解析到 $($needAlias[$name])）"
+                  $bad += "$name (alias does not resolve to $($needAlias[$name]))"
               }
           }
 
           if ($bad.Count) {
               $bad | ForEach-Object { Write-Host "::error::$_" }
-              throw "profile 命令断言失败：$($bad.Count) 项"
+              throw "profile smoke assertions failed: $($bad.Count) item(s)"
           }
 
           if (-not (Get-Command prompt -ErrorAction Ignore)) { throw 'prompt is not defined' }
-          # touch GNU 语义回归：已存在文件不得清空内容
+          # touch must keep GNU semantics: an existing file must not be truncated
           $t = Join-Path $env:TEMP "ci-touch-$PID.txt"
           Set-Content -Path $t -Value 'sentinel'
           touch $t

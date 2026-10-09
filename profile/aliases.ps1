@@ -26,8 +26,11 @@ if ($global:__Tools.ContainsKey('yazi')) {
 # ==============================================================
 # ls 变体（基于 eza）
 # ==============================================================
+# 内置别名 ls 必须在两个分支之前先移除：Alias 的解析优先级高于 Function，
+# 只在 eza 分支里移除会让降级分支的 function ls 永远被遮蔽（Terminal-Icons
+# 的按需加载因此从不触发）
+Remove-Item Alias:ls -Force -ErrorAction SilentlyContinue
 if ($global:__Tools.ContainsKey('eza')) {
-    Remove-Item Alias:ls -Force -ErrorAction SilentlyContinue
     function ls  { eza --icons @args }
     function ll  { eza --icons -l --git @args }
     function la  { eza --icons -la --git @args }
