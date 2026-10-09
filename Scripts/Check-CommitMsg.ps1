@@ -24,6 +24,12 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# git 按 UTF-8 输出提交信息，而 Windows 控制台默认代码页可能是 GBK（936）。
+# 不显式指定 [Console]::OutputEncoding，git log 的中文会被解码成乱码，
+# 导致 subject 前缀匹配失败、列宽算错——本机实测会把合规提交误报成违规。
+try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 }
+catch { Write-Debug "无法设置控制台输出编码（无控制台/精简宿主），不影响格式校验: $($_.Exception.Message)" }
+
 $validTypes     = @('feat', 'fix', 'docs', 'refactor', 'perf', 'test', 'chore', 'ci', 'build', 'revert')
 $subjectMaxWidth = 60
 $bodyMaxWidth    = 72
