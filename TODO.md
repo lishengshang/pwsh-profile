@@ -24,7 +24,7 @@
 - [x] **阶段 1：测试与 lint 加固**
   - [x] 提取 setup 链接部署循环为可测试函数（`refactor/extract-link-deploy`，
         新增 `Scripts/Deploy-ConfigLinks.ps1`；`Get-ManagedLinkState` 迁入
-        LinkRegistry.ps1；旧 txt 迁移块提取为 `ConvertFrom-LegacyLinkRegistry`）
+        LinkRegistry.ps1；旧 txt 迁移块当时提取为独立函数，后因迁移已完成而删除）
   - [x] Pester 测试套件：registry 读写 / deploy 幂等与降级 / repair 五类链接
         （`test/link-pester-suite`，CI 仅 pwsh 矩阵作业运行；附带修复断链
         junction 判定跨版本不一致——PS7 下被误备份而非清理）

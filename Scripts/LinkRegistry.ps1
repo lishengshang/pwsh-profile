@@ -154,36 +154,6 @@ function Restore-LinkRegistry {
     }
 }
 
-# 旧版 linked-targets.txt（仅 Target 路径）→ JSON 条目数组的纯转换：Source 从
-# manifest 推断，类型按磁盘实际状态判断，都不是则普通文件按 Copy、目录按
-# CopyDirectory（宁降级勿误判）。不落盘不删 txt，由调用方决定 Save 与删除时机。
-function ConvertFrom-LegacyLinkRegistry {
-    param(
-        [Parameter(Mandatory)][string]$LegacyTxt,
-        [Parameter(Mandatory)]$Manifest,
-        [Parameter(Mandatory)][string]$RepoDir
-    )
-    $entries = @()
-    foreach ($t in (Get-Content $LegacyTxt -ErrorAction SilentlyContinue)) {
-        if (-not $t) { continue }
-        $m = $Manifest | Where-Object { $_.Target -ieq $t }
-        if (-not $m) { continue }   # 清单中已不存在的旧条目，放弃迁移
-        $src = Join-Path $RepoDir $m.Source
-        $item = Get-Item -LiteralPath $t -Force -ErrorAction SilentlyContinue
-        $type = $item.LinkType
-        if (-not $type -and $item) {
-            if ($item.PSIsContainer) {
-                $type = 'CopyDirectory'
-            }
-            else {
-                $type = if (__Test-IsHardLinkOf -Src $src -Target $t) { 'HardLink' } else { 'Copy' }
-            }
-        }
-        $entries += [pscustomobject]@{ Target = $t; Source = $src; LinkType = $type }
-    }
-    return $entries
-}
-
 function Save-LinkRegistryEntries {
     param(
         [Parameter(Mandatory)][string]$Path,
