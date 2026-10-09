@@ -227,39 +227,30 @@ function Set-LinkRegistryEntry {
 }
 
 # 判定目标是否已由本仓库管理（幂等跳过的依据），返回 @{ IsManaged; LinkType }：
-# SymbolicLink/Junction 看 Target 是否指向仓库源；HardLink 用 fsutil 查同 inode；
-# Copy/CopyDirectory 只在注册表已登记且 Source 匹配（文件再比哈希）时认可——
-# 哈希相同不等于受管理，否则会误跳过建链。
+# 先认磁盘证据，再退到登记过的副本。
 function Get-ManagedLinkState ([string]$src, [string]$target, [string]$RegistryPath) {
+    # 磁盘证据优先，判定单源在 __Get-ManagedLinkTypeFromDisk（符号链接指向仓库源、
+    # fsutil 同 inode）
+    $diskType = __Get-ManagedLinkTypeFromDisk -Src $src -Target $target
+    if ($diskType) { return @{ IsManaged = $true; LinkType = $diskType } }
     $tgt = Get-Item -LiteralPath $target -Force -ErrorAction SilentlyContinue
     if (-not $tgt) { return @{ IsManaged = $false; LinkType = $null } }
+    # 有链接属性却不指向仓库源 = 用户自己的链接，绝不按登记信息接管
+    if ($tgt.LinkType -in 'SymbolicLink', 'Junction') { return @{ IsManaged = $false; LinkType = $null } }
     $srcFull = [System.IO.Path]::GetFullPath($src).TrimEnd('\')
-    if ($tgt.LinkType -in 'SymbolicLink', 'Junction') {
-        # Windows PowerShell 5.1 返回 String[]，取第一个目标再传给 GetFullPath。
-        $tgtTarget = @($tgt.Target) | Select-Object -First 1
-        if ($tgtTarget -and ([System.IO.Path]::GetFullPath([string]$tgtTarget).TrimEnd('\') -ieq $srcFull)) {
-            return @{ IsManaged = $true; LinkType = $tgt.LinkType }
-        }
-        return @{ IsManaged = $false; LinkType = $null }
-    }
     $entry = @(Get-LinkRegistryEntries $RegistryPath) |
         Where-Object { $_.Target -ieq $target } | Select-Object -First 1
-    if ($tgt.PSIsContainer) {
-        # 目录仅认可登记过的 CopyDirectory（Junction/SymbolicLink 已在上面处理）
-        if ($entry -and $entry.LinkType -eq 'CopyDirectory' -and
-            (([System.IO.Path]::GetFullPath($entry.Source).TrimEnd('\')) -ieq $srcFull)) {
-            return @{ IsManaged = $true; LinkType = 'CopyDirectory' }
+    # 无链接关系时只认登记过的副本：目录 CopyDirectory；文件 Copy 还要求内容一致
+    # （哈希相同 ≠ 受管理，必须登记过才算，否则会误跳过建链）
+    if ($entry -and (([System.IO.Path]::GetFullPath($entry.Source).TrimEnd('\')) -ieq $srcFull)) {
+        if ($tgt.PSIsContainer) {
+            if ($entry.LinkType -eq 'CopyDirectory') { return @{ IsManaged = $true; LinkType = 'CopyDirectory' } }
         }
-        return @{ IsManaged = $false; LinkType = $null }
-    }
-    # 文件：先查 HardLink 关系
-    if (__Test-IsHardLinkOf -Src $src -Target $target) { return @{ IsManaged = $true; LinkType = 'HardLink' } }
-    # 普通文件：注册表登记为 Copy 且 Source 匹配时，内容一致才算管理
-    if ($entry -and $entry.LinkType -eq 'Copy' -and
-        (([System.IO.Path]::GetFullPath($entry.Source).TrimEnd('\')) -ieq $srcFull)) {
-        if ((Get-FileHash $src -ErrorAction SilentlyContinue).Hash -eq
-            (Get-FileHash $target -ErrorAction SilentlyContinue).Hash) {
-            return @{ IsManaged = $true; LinkType = 'Copy' }
+        elseif ($entry.LinkType -eq 'Copy') {
+            if ((Get-FileHash $src -ErrorAction SilentlyContinue).Hash -eq
+                (Get-FileHash $target -ErrorAction SilentlyContinue).Hash) {
+                return @{ IsManaged = $true; LinkType = 'Copy' }
+            }
         }
     }
     return @{ IsManaged = $false; LinkType = $null }
