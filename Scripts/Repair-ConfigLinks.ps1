@@ -129,11 +129,8 @@ foreach ($e in $entries) {
                 }
             }
             'HardLink' {
-                # fsutil 列出目标文件的全部硬链接名（路径不带盘符），规范化后比对
-                $srcNorm = ((Get-Item $src).FullName.TrimEnd('\')) -replace '^[A-Za-z]:', ''
-                $links = (fsutil hardlink list $e.Target 2>$null) |
-                    ForEach-Object { ($_ -replace '^[A-Za-z]:', '').Trim() }
-                if ($links -contains $srcNorm) { continue }
+                # 已经是本仓库源的硬链接就无需重建
+                if (__Test-IsHardLinkOf -Src $src -Target $e.Target) { continue }
 
                 $tgt = Get-Item -LiteralPath $e.Target -Force -ErrorAction SilentlyContinue
                 if ($tgt) {
