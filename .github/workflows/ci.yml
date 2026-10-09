@@ -1,10 +1,11 @@
 # CI：双版本（PowerShell 7 + Windows PowerShell 5.1）语法解析与冒烟验证
 # 对应 AGENTS.md「提交前验证」的自动化：
 #   1. 全仓库 .ps1 语法解析（5.1 兼容红线：禁 ?. / ?? 等 PS7 专属语法）
-#   2. profile 冒烟（入口 dot-source + 核心命令存在性——依赖优雅降级，CI 裸环境可跑）
+#   2. profile 冒烟（入口 dot-source + 命令类型断言——依赖优雅降级，CI 裸环境可跑）
 #   3. setup.ps1 幂等性（-SkipTools -Yes 连跑两次，第二次应全部跳过）
 #   4. Pester 测试套件（tests/，仅 pwsh 矩阵作业运行）
 #   5. PSScriptAnalyzer 新增违规门禁（基线提交快照比对，仅 pwsh 矩阵作业运行）
+#   6. 规范校验作业（提交信息格式 + 注释交叉引用真实性，见 conventions 作业）
 name: CI
 
 on:
@@ -91,7 +92,7 @@ jobs:
           }
           Write-Host 'setup idempotency OK'
 
-      - name: profile 冒烟（dot-source 入口 + 核心命令存在性）
+      - name: profile 冒烟（dot-source 入口 + 命令类型断言）
         run: |
           Set-ExecutionPolicy -Scope Process Bypass -Force
           $ErrorActionPreference = 'Stop'
@@ -99,15 +100,51 @@ jobs:
           # 入口用 $PSScriptRoot 定位子模块，仓库内直接 dot-source 即可；
           # CI 无外部工具，全链路走优雅降级路径（本身就是被测行为之一）
           . .\Microsoft.PowerShell_profile.ps1
-          $need = @('gs', 'ga', 'gcm', 'gp', 'gl', 'psync', 'ep', 'ch', 'wum',
-                    'touch', 'which', 'unzip', 'mkcd', 'gquick')
-          foreach ($name in $need) {
-              if (-not (Get-Command $name -ErrorAction Ignore)) {
-                  throw "Missing command after profile load: $name"
+
+          # 断言命令类型而非仅存在性：命令解析优先级为 Alias > Function，
+          # 只判 Get-Command 非空会让被内置别名遮蔽的名字（如 gcm→Get-Command）
+          # 恒真通过——历史事故：git 简写 gcm/gc/gp/gl/gcb 定义后全程不可用而 CI 全绿
+          # 清单只收录无条件定义的名字；随外部工具存在与否才定义的
+          # （cat/find/y/lg）不在此列，条件分支由各自降级路径断言覆盖
+          $needFunction = @(
+              '..', '...', '....', 'mkcd', 'ls', 'll', 'la', 'lt', 'llt',
+              'profile-edit', 'psync', 'touch', 'which', 'grep', 'unzip',
+              'gs', 'ga', 'gaa', 'gpl', 'gd', 'gds', 'gco', 'gb', 'gst',
+              'grs', 'gbn', 'gquick', 'glog', 'gup', 'gclean',
+              'ps-reboot', 'ps-shutdown', 'ps-hibernate', 'ps-suspend', 'ps-lock',
+              'Get-PublicIP', 'Get-PortProcess', 'Stop-Port', 'wup', 'wum',
+              'codehere', 'hashcheck', 'hashadd', 'wallpaper'
+          )
+          $bad = @()
+          foreach ($name in $needFunction) {
+              $cmd = Get-Command $name -ErrorAction Ignore
+              if (-not $cmd) { $bad += "$name（profile 加载后缺失）"; continue }
+              if ($cmd.CommandType -ne 'Function') {
+                  $bad += "$name（解析为 $($cmd.CommandType)，疑似被内置别名遮蔽）"
               }
           }
-          # eza 缺失时 ll 必须回退为 Get-ChildItem 包装函数（降级路径验证）
-          if (-not (Get-Command ll -ErrorAction Ignore)) { throw 'Missing command: ll' }
+
+          # profile 自有别名须为 Alias 且解析到本仓库的实现函数
+          $needAlias = @{
+              ep = 'profile-edit'; ch = 'codehere'; lock = 'ps-lock'
+              myip = 'Get-PublicIP'; portof = 'Get-PortProcess'; killport = 'Stop-Port'
+          }
+          foreach ($name in $needAlias.Keys) {
+              $cmd = Get-Command $name -ErrorAction Ignore
+              if (-not $cmd -or $cmd.CommandType -ne 'Alias') {
+                  $bad += "$name（应为指向 $($needAlias[$name]) 的别名）"; continue
+              }
+              $resolved = $cmd.ResolvedCommand
+              if (-not $resolved -or $resolved.Name -ne $needAlias[$name]) {
+                  $bad += "$name（别名未解析到 $($needAlias[$name])）"
+              }
+          }
+
+          if ($bad.Count) {
+              $bad | ForEach-Object { Write-Host "::error::$_" }
+              throw "profile 命令断言失败：$($bad.Count) 项"
+          }
+
           if (-not (Get-Command prompt -ErrorAction Ignore)) { throw 'prompt is not defined' }
           # touch GNU 语义回归：已存在文件不得清空内容
           $t = Join-Path $env:TEMP "ci-touch-$PID.txt"
@@ -115,7 +152,7 @@ jobs:
           touch $t
           if ((Get-Content $t) -ne 'sentinel') { throw 'touch modified existing file contents' }
           Remove-Item $t -Force
-          Write-Host "Smoke test OK: $($need.Count) commands + prompt + touch semantics"
+          Write-Host "Smoke test OK: $($needFunction.Count) functions + $($needAlias.Count) aliases + prompt + touch semantics"
 
       - name: Pester 测试套件（仅 pwsh 矩阵作业运行）
         if: matrix.shell == 'pwsh'
@@ -155,3 +192,38 @@ jobs:
           # 浅检出下补齐基线提交对象（比对树所需）
           git fetch --no-tags --depth=1 origin $env:BASE_SHA
           .\Scripts\Compare-PsaBaseline.ps1 -BaseSha $env:BASE_SHA
+
+  # 独立作业而非并入 verify 矩阵：区间校验要完整历史，而矩阵作业刻意用默认
+  # 浅检出跑 PSA 的 depth=1 fetch；混在一起会拖慢两个版本作业，且 5.1 矩阵
+  # 跑这份校验没有额外价值（校验的是文本，不涉及版本兼容）
+  conventions:
+    name: 规范校验（提交信息 + 注释交叉引用）
+    runs-on: windows-latest
+    env:
+      # PR 以目标分支 tip 为基线；push 以上一提交为基线（首次推送为全零则跳过区间）
+      BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+    steps:
+      # 逐条校验区间内的提交信息需要完整历史（checkout 默认 depth=1 只有 HEAD）
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 提交信息格式 + 引用真实性
+        shell: pwsh
+        run: |
+          Set-Location $env:GITHUB_WORKSPACE
+          $range = $null
+          if ($env:BASE_SHA -and $env:BASE_SHA -notlike '0000000*') {
+              git merge-base --is-ancestor $env:BASE_SHA HEAD 2>$null
+              if ($LASTEXITCODE -eq 0) {
+                  $range = "$($env:BASE_SHA)..HEAD"
+              } else {
+                  # rebase / force-push 后基线可能不再是祖先，退化为只校验 HEAD 一条
+                  Write-Host "基线提交不在当前历史中，退化为只校验 HEAD"
+                  $range = 'HEAD~1..HEAD'
+              }
+          } else {
+              Write-Host '无基线提交（首次推送），跳过区间校验'
+          }
+          .\Scripts\Check-CommitMsg.ps1 -CheckRefs
+          if ($range) { .\Scripts\Check-CommitMsg.ps1 -Range $range }
