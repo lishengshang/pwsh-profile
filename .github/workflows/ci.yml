@@ -204,8 +204,11 @@ jobs:
     name: 规范校验（提交信息 + 注释交叉引用）
     runs-on: windows-latest
     env:
-      # PR 以目标分支 tip 为基线；push 以上一提交为基线（首次推送为全零则跳过区间）
-      BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+      # PR 的基线在运行时用 git merge-base 求，不用 github.event.pull_request.base.sha：
+      # 后者是 PR 创建时的基线快照，base 分支推进后不会更新，实测会把已经进 main 的
+      # 历史提交重新算进区间、拦住与本改动无关的旧提交
+      BASE_REF: ${{ github.base_ref }}
+      BEFORE_SHA: ${{ github.event.before }}
     steps:
       # 逐条校验区间内的提交信息需要完整历史（checkout 默认 depth=1 只有 HEAD）
       - uses: actions/checkout@v4
@@ -217,17 +220,16 @@ jobs:
         run: |
           Set-Location $env:GITHUB_WORKSPACE
           $range = $null
-          if ($env:BASE_SHA -and $env:BASE_SHA -notlike '0000000*') {
-              git merge-base --is-ancestor $env:BASE_SHA HEAD 2>$null
-              if ($LASTEXITCODE -eq 0) {
-                  $range = "$($env:BASE_SHA)..HEAD"
-              } else {
-                  # rebase / force-push 后基线可能不再是祖先，退化为只校验 HEAD 一条
-                  Write-Host "基线提交不在当前历史中，退化为只校验 HEAD"
-                  $range = 'HEAD~1..HEAD'
-              }
+          if ($env:BASE_REF) {
+              # pull_request：取与目标分支的共同祖先，区间只含本 PR 引入的提交
+              git fetch --no-tags origin "refs/heads/${env:BASE_REF}:refs/remotes/origin/${env:BASE_REF}" 2>$null
+              $mb = @(& git merge-base "origin/$env:BASE_REF" HEAD 2>$null) | Select-Object -First 1
+              if ($mb) { $range = "$($mb.Trim())..HEAD" } else { Write-Host '无法求 merge-base，跳过区间校验' }
+          } elseif ($env:BEFORE_SHA -and $env:BEFORE_SHA -notlike '0000000*') {
+              # push：以上一提交为基线（首次推送为全零，跳过）
+              $range = "$($env:BEFORE_SHA)..HEAD"
           } else {
-              Write-Host '无基线提交（首次推送），跳过区间校验'
+              Write-Host '无基线可解析，跳过区间校验'
           }
           .\Scripts\Check-CommitMsg.ps1 -CheckRefs
           if ($range) { .\Scripts\Check-CommitMsg.ps1 -Range $range }
