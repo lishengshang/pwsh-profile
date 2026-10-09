@@ -9,8 +9,7 @@
     最新状态——SymbolicLink 重建符号链接、HardLink 重链、Copy 比较哈希后刷新
     副本、CopyDirectory 用 robocopy /MIR 镜像同步；未登记的目标（用户自有配置）
     永远不碰。修复类型不可用时降级为 Copy 并更新注册表（下次不再徒劳重试）。
-    旧版 linked-targets.txt（仅路径）首次运行时自动迁移为 JSON；注册表
-    JSON 损坏时自动备份 .corrupt-<时间戳> 并按清单与磁盘状态重建。
+    注册表 JSON 损坏时自动备份 .corrupt-<时间戳> 并按清单与磁盘状态重建。
     setup.ps1 建链后与 psync 拉取成功后自动调用。
 #>
 #Requires -Version 5.1
@@ -21,27 +20,16 @@ param(
 )
 
 $repoDir = Split-Path $PSScriptRoot
-$legacyTxt = Join-Path (Split-Path $Registry) 'linked-targets.txt'
 
 # 注册表读写单源在 LinkRegistry.ps1（原子写）
 . (Join-Path $PSScriptRoot 'LinkRegistry.ps1')
 
-# ---- 读取注册表（旧 txt 自动迁移；损坏时备份重建） ----
+# ---- 读取注册表（损坏时备份重建） ----
 # Restore-LinkRegistry：解析失败先备份 .corrupt-<时间戳>，再按清单与磁盘
 # 状态重建（只认领有磁盘证据的符号链接/Junction/硬链接；Copy 类登记随损坏
 # 丢失，由下次 setup 按未登记目标重新接管升级为链接，属预期行为）
 $manifest = @(. (Join-Path $PSScriptRoot 'Get-ManagedLinks.ps1'))
 $entries = @(Restore-LinkRegistry -Path $Registry -Manifest $manifest -RepoDir $repoDir)
-if (-not $entries -and (Test-Path $legacyTxt)) {
-    # 旧格式只有 Target 路径：Source 从清单推断、类型按磁盘状态判断，
-    # 迁移转换单源在 LinkRegistry.ps1 的 ConvertFrom-LegacyLinkRegistry；
-    # 迁移落盘与 txt 删除持锁，防与并发 setup 的登记互相覆盖
-    $entries = @(ConvertFrom-LegacyLinkRegistry -LegacyTxt $legacyTxt -Manifest $manifest -RepoDir $repoDir)
-    __Invoke-WithLinkRegistryLock -Body {
-        Save-LinkRegistryEntries -Path $Registry -Entries $entries
-        Remove-Item $legacyTxt -Force -ErrorAction SilentlyContinue
-    }
-}
 if (-not $entries) { return }
 
 $failed = @()
