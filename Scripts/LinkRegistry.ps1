@@ -1,17 +1,13 @@
 ﻿# ==============================================================
 # 链接注册表读写（setup.ps1 与 Repair-ConfigLinks.ps1 共用）
-# 注册表 %LOCALAPPDATA%\pwsh-profile\linked-targets.json 记录
-# Target/Source/LinkType 三元组（LinkType: SymbolicLink / Junction /
-# HardLink / Copy / CopyDirectory）。写入原子（tmp + Move）；读改写
-# （Set-LinkRegistryEntry）经命名 Mutex 串行，setup 与 Repair 并发登记
-# 不再互相覆盖。注册表损坏（JSON 解析失败）时由 Restore-LinkRegistry
-# 备份 .corrupt-<时间戳> 并按清单与磁盘状态重建。
+# %LOCALAPPDATA%\pwsh-profile\linked-targets.json 记录 Target/Source/LinkType
+# 三元组。写入原子（tmp + Move）；读改写经命名 Mutex 串行，setup 与 Repair 并发
+# 登记不再互相覆盖；JSON 损坏时 Restore-LinkRegistry 备份 .corrupt-<时间戳> 后
+# 按清单与磁盘状态重建。
 # ==============================================================
 
-# 内部：注册表 JSON 文本 → 条目数组。解析失败抛异常（由调用方决定视为空
-# 还是走自愈）；成功时处理 Windows PowerShell 5.1 读取顶层 JSON 数组时
-# 属性被合并成数组而不是返回对象数组的形态，显式展开避免
-# Target/Source/LinkType 变成数组。
+# 内部：注册表 JSON 文本 → 条目数组。解析失败抛异常（调用方决定视为空还是自愈）。
+# 5.1 读顶层 JSON 数组会把属性合并成数组而非对象数组，需显式展开。
 function __ConvertFrom-RegistryJson {
     param([Parameter(Mandatory)][string]$Json)
     $raw = $Json | ConvertFrom-Json
@@ -39,10 +35,9 @@ function Get-LinkRegistryEntries {
     catch { return @() }   # 损坏的 JSON 视为空，按未登记处理（自愈走 Restore-LinkRegistry）
 }
 
-# 内部：命名 Mutex 串行化注册表读改写（setup 与 Repair 可能并发登记）。
-# Global 命名空间跨会话互斥；创建失败（受限环境）或等待超时都降级为
-# 不加锁继续——注册表是 Repair 的增强依据，宁可丢一次登记也不阻塞主流程。
-# AbandonedMutex（前一持锁进程异常退出）按已获得处理，属自愈路径。
+# 内部：命名 Mutex 串行化注册表读改写。Global 命名空间跨会话互斥；创建失败或
+# 等待超时降级为不加锁继续（注册表只是 Repair 的增强依据，宁丢一次登记不阻塞主流程）。
+# AbandonedMutex（持锁进程异常退出）按已获得处理。
 function __Invoke-WithLinkRegistryLock {
     param(
         [Parameter(Mandatory)][scriptblock]$Body,
@@ -73,11 +68,9 @@ function __Invoke-WithLinkRegistryLock {
     }
 }
 
-# 内部：按磁盘状态严格认领受管链接类型——只认有磁盘证据的
-# SymbolicLink / Junction（且指向仓库源）与 HardLink（fsutil 同 inode
-# 确认）；普通文件/目录一律返回 $null 不认领（内容恰好相同 ≠ 受本
-# 项目管理），交给 setup 下次部署按「未登记 → 重新接管」升级为链接，
-# 避免把用户自有配置误登记进注册表。
+# 内部：按磁盘状态严格认领受管链接类型——只认有证据的 SymbolicLink/Junction
+# （且指向仓库源）与 HardLink（fsutil 同 inode）；普通文件/目录返回 $null 不认领
+# （内容相同 ≠ 受本项目管理），交给 setup 下次部署按「未登记」重新接管。
 function __Get-ManagedLinkTypeFromDisk {
     param(
         [Parameter(Mandatory)][string]$Src,
@@ -109,11 +102,9 @@ function __Get-ManagedLinkTypeFromDisk {
     return $null
 }
 
-# 注册表自愈入口（Repair-ConfigLinks.ps1 调用）：正常时原样返回条目、
-# 不落盘；JSON 解析失败时先备份 .corrupt-<时间戳>，锁内重读（并发恢复
-# 可能已修复）仍失败则按清单与磁盘状态重建并落盘。重建只认领有磁盘
-# 证据的链接关系（见 __Get-ManagedLinkTypeFromDisk），Copy/CopyDirectory
-# 登记随损坏丢失，由 setup 下次部署按未登记目标重新接管，属预期行为。
+# 注册表自愈入口（Repair-ConfigLinks.ps1 调用）：正常时原样返回、不落盘；解析失败
+# 先备份 .corrupt-<时间戳>，锁内重读仍失败则按清单与磁盘状态重建。重建只认领有磁盘
+# 证据的链接，Copy 登记随之丢失、由下次 setup 重新接管，属预期行为。
 function Restore-LinkRegistry {
     # 参数在传入 __Invoke-WithLinkRegistryLock 的脚本块内使用，规则不追踪脚本块
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'Manifest', Justification = '脚本块内使用')]
@@ -151,11 +142,9 @@ function Restore-LinkRegistry {
     }
 }
 
-# 旧版 linked-targets.txt（仅 Target 路径）→ JSON 条目数组的纯转换：
-# Source 从 manifest 推断；类型按磁盘实际状态判断——LinkType 属性
-# （符号链接/Junction）、fsutil 确认 HardLink 关系，都不是则普通文件按
-# Copy、普通目录按 CopyDirectory（宁降级勿误判）。不落盘不删 txt，
-# 由调用方决定 Save 与删除时机。
+# 旧版 linked-targets.txt（仅 Target 路径）→ JSON 条目数组的纯转换：Source 从
+# manifest 推断，类型按磁盘实际状态判断，都不是则普通文件按 Copy、目录按
+# CopyDirectory（宁降级勿误判）。不落盘不删 txt，由调用方决定 Save 与删除时机。
 function ConvertFrom-LegacyLinkRegistry {
     param(
         [Parameter(Mandatory)][string]$LegacyTxt,
@@ -228,12 +217,10 @@ function Set-LinkRegistryEntry {
     }
 }
 
-# 判定目标是否已由本仓库管理（幂等跳过的依据）。返回 @{ IsManaged; LinkType }：
-#   SymbolicLink/Junction -> Target 属性指向仓库源
-#   HardLink              -> fsutil 同 inode 路径包含仓库源
-#   Copy / CopyDirectory  -> 仅当注册表已登记为该类型且 Source 匹配
-#                            （普通文件再比哈希；内容恰好相同的独立文件不算——
-#                            Hash 相同 ≠ 受本项目管理，避免误跳过建链）
+# 判定目标是否已由本仓库管理（幂等跳过的依据），返回 @{ IsManaged; LinkType }：
+# SymbolicLink/Junction 看 Target 是否指向仓库源；HardLink 用 fsutil 查同 inode；
+# Copy/CopyDirectory 只在注册表已登记且 Source 匹配（文件再比哈希）时认可——
+# 哈希相同不等于受管理，否则会误跳过建链。
 function Get-ManagedLinkState ([string]$src, [string]$target, [string]$RegistryPath) {
     $tgt = Get-Item -LiteralPath $target -Force -ErrorAction SilentlyContinue
     if (-not $tgt) { return @{ IsManaged = $false; LinkType = $null } }

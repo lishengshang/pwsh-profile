@@ -1,40 +1,19 @@
-﻿#Requires -Version 5.1
-<#
+﻿<#
 .SYNOPSIS
     安装 PowerShell profile 到当前用户的 PowerShell 配置目录。
 .DESCRIPTION
-    支持 PowerShell 7+（完整体验）与 Windows PowerShell 5.1（兼容模式）；
-    链接目标基于运行时的 $PROFILE 动态解析，5.1 下自动部署到
-    Documents\WindowsPowerShell\，与 PS7 的部署互不影响。
-    1. 通过符号链接把仓库中的 profile 文件映射到 $PROFILE 所在目录
-       （符号链接需要管理员权限或开发者模式，否则回退到复制模式）。
-    2. 默认按 Standard 组件用 winget 安装依赖工具、Install-Module 安装模块；
-       加 -SkipTools 可跳过下载（工具均为可选依赖，缺失时 profile 自动降级）。
-    3. 无显式组件参数且处于交互终端时，先进入安装向导
-       （简介 → 组件勾选 → 工具预览/剔除 → 确认）；-Yes 或非交互环境自动跳过。
-    仓库目录本身即 $PROFILE 目录时（本机直用仓库），自动跳过文件链接，只装工具。
-    组件选择决定"下载哪些工具/模块、链接哪些外部配置"：profile 本体（Core）始终
-    部署，运行时所有外部工具引用都被 $global:__Tools.ContainsKey 守卫，未安装的
-    工具自动优雅降级（对应别名/函数不创建）。
-.PARAMETER SkipTools
-    跳过 winget 工具与 PowerShell 模块的自动安装（仍按所选组件链接外部配置）。
-.PARAMETER Minimal
-    仅安装 core 组件（profile 本体 + 基础命令行工具）。与 -Full 互斥。
-.PARAMETER Full
-    安装全部组件。与 -Minimal 互斥。
-.PARAMETER Components
-    显式指定要安装的组件（覆盖 -Minimal/-Full 预设）；可选值见下方"组件"注释。
-    多个组件用逗号分隔（-Components core,gitui）。
-.PARAMETER SkipComponents
-    从解析出的组件集合中剔除指定组件（同样逗号分隔）。
-.PARAMETER Yes
-    跳过交互式向导与确认，完全非交互安装（脚本 / CI 调用用；等价旧行为）。
-.PARAMETER Wizard
-    强制进入交互式向导（仅当未指定任何组件参数时生效；优先于 -Yes）。
-.PARAMETER ExcludeTools
-    按名称剔除不想安装的工具（如 fnm,ffmpeg；逗号分隔）。仅影响工具安装，
-    对应功能运行时自动降级，不影响 profile 本体。
+    1. 把仓库中的 profile 文件链接到 $PROFILE 目录（无符号链接权限时回退复制模式）；
+       链接目标按运行时 $PROFILE 动态解析，5.1 部署到 Documents\WindowsPowerShell\，
+       与 PS7 互不影响。仓库目录本身即 $PROFILE 目录时跳过文件链接，只装工具。
+    2. 按所选组件用 winget 装依赖工具、Install-Module 装模块（-SkipTools 跳过下载；
+       工具均为可选依赖，缺失时 profile 自动降级）。
+    3. 无显式组件参数且处于交互终端时进入安装向导（-Yes / 非交互环境自动跳过）。
+
+    组件决定装哪些工具/模块、链接哪些外部配置；profile 本体（Core）始终部署。
+    各参数的含义与预设见 docs/reference.md「参数一览」，此处不重复维护。
 #>
+#Requires -Version 5.1
+# 须在帮助块之后：放在首位会让 Get-Help / -? 读不到本块
 # CmdletBinding(PositionalBinding=$false)：禁止位置绑定。否则 "-Components core gitui"
 # 的 gitui 会被位置绑定到 SkipComponents——语义反转为"剔除 gitui"且无任何告警，必须报错。
 # 注意：该特性必须放在 param() 上方才生效（放 param() 内部时 PositionalBinding 不起作用）。
@@ -53,12 +32,10 @@ param(
 $ErrorActionPreference = 'Stop'
 
 # ================= 组件选择（多级别下载/安装粒度）=================
-# 组件决定"下载哪些工具/模块、链接哪些外部配置"。profile 本体（Core 条目）始终部署；
-# 运行时所有外部工具引用都被 $global:__Tools.ContainsKey 守卫，未安装的工具自动优雅
-# 降级（对应别名/函数不创建），故安装阶段不装即等于运行时缺失，无需改 profile 代码。
-#   -Components <组件>      显式指定要安装的组件（覆盖 -Minimal/-Full 预设）
-#   -SkipComponents <组件>  从解析结果中剔除
-#   -Minimal = core；-Full = 全部；（默认/无开关 = Standard: core+completion+gitui）
+# 组件决定装哪些工具/模块、链接哪些外部配置。profile 本体（Core 条目）始终部署，
+# 未装的工具运行时被 $global:__Tools.ContainsKey 守卫自动降级，故装不装即等于
+# 有没有该功能，无需改 profile 代码。
+#   -Minimal = core；-Full = 全部；无开关 = Standard（core+completion+gitui）
 $allComponents      = 'core', 'completion', 'editor', 'files', 'gitui'
 $standardComponents = 'core', 'completion', 'gitui'
 
@@ -131,16 +108,10 @@ foreach ($l in $linkItems) {
 }
 $linkItems = @($linkItems | Where-Object { $_.Core -or ($effectiveComponents -contains $_.Component) })
 
-# winget 工具清单（与 README「依赖工具」表保持一致）
-# 每项标注 Component：决定它属于哪个安装组件（多级别下载粒度的依据）。
-#   core      基础 shell 与开发工具
-#   completion 命令补全（PSFzf 依赖 fzf）
-#   editor     Neovim / LazyVim（+ treesitter 编译器）
-#   files      yazi 及其预览依赖
-#   gitui      lazygit 终端 git UI
+# winget 工具清单（与 docs/reference.md「依赖工具」表保持一致）
+# 每项的 Component 决定它属于哪个安装组件；Desc 是向导与安装日志里的一句话用途；
+# Optional = 纯增强不影响核心体验，向导标注「可剔除」。
 $wingetTools = @(
-    # Desc：安装向导与安装日志里的一句话用途；Optional：纯增强、不影响核心体验，
-    # 向导里标注「可剔除」（与 README「依赖工具」表的「缺失时回退」列同源）。
     @{ Name = 'Starship';   Id = 'Starship.Starship';               Component = 'core'; Desc = '提示符主题' }
     @{ Name = 'eza';        Id = 'eza-community.eza';               Component = 'core'; Desc = '文件列表（图标 + git 状态）' }
     @{ Name = 'zoxide';     Id = 'ajeetdsouza.zoxide';              Component = 'core'; Desc = '智能目录跳转（z）' }
@@ -286,13 +257,13 @@ function Install-PwshModules {
     }
 
     # 从唯一事实来源（$componentModules）按所选组件推导，与向导展示同源
-    $need = @(
+    $wanted = @(
         $componentModules.Keys | Where-Object { $effectiveComponents -contains $_ } |
             ForEach-Object { $componentModules[$_] }
     )
-    $need = @($need | Where-Object { -not (Get-Module -ListAvailable -Name $_) })
+    $need = @($wanted | Where-Object { -not (Get-Module -ListAvailable -Name $_) })
     if (-not $need) {
-        Write-Host '已安装: PSCompletions / PSFzf / Terminal-Icons' -ForegroundColor DarkGray
+        Write-Host "已安装: $($wanted -join ', ')" -ForegroundColor DarkGray
         return
     }
     try {

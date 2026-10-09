@@ -21,7 +21,7 @@
 按阶段推进，每阶段完成后停下确认。已完成阶段 0（仓库卫生：ime.lua 验证提交合并、
 过期分支清理）。
 
-- [ ] **阶段 1：测试与 lint 加固**
+- [x] **阶段 1：测试与 lint 加固**
   - [x] 提取 setup 链接部署循环为可测试函数（`refactor/extract-link-deploy`，
         新增 `Scripts/Deploy-ConfigLinks.ps1`；`Get-ManagedLinkState` 迁入
         LinkRegistry.ps1；旧 txt 迁移块提取为 `ConvertFrom-LegacyLinkRegistry`）
@@ -44,6 +44,9 @@
         （Remove-StaleLinkBackup，部署结束后执行；大小写或格式不一致的一律不碰）
 
 - [ ] **阶段 3：文档防漂移 CI**（`ci/docs-drift-check`）
+  - [x] 注释与文档的交叉引用真实性校验（`Scripts/Check-CommitMsg.ps1 -CheckRefs`，
+        CI 与本地提交前验证都跑）——文件不存在、或 `X.md「章节」` 里 X.md 无该标题
+        即失败。此前有 3 处注释指向 README Hub 化时已删除的「设计说明」「依赖工具」表
   - [ ] AST 提取 aliases.ps1 函数与 setup.ps1 winget 清单，CI 校验
         docs/usage.md 与 docs/reference.md 覆盖（代码 ⊆ 文档单向）
 
@@ -69,23 +72,5 @@
 
 ## 已完成
 
-- [x] 修复 setup 重复运行时重复备份和重建链接的问题。
-- [x] 统一管理核心 Profile 文件和外部配置链接的 manifest。
-- [x] 增加 LinkRegistry，记录 Target/Source/LinkType。
-- [x] 支持 SymbolicLink、Junction、HardLink、Copy、CopyDirectory 的修复与降级。
-- [x] 修复外置仓库 + HardLink/Junction 部署时的仓库发现和 `psync`。
-- [x] 修复 fnm 跨 PowerShell 会话复用旧 `FNM_MULTISHELL_PATH` 的问题。
-- [x] 修复 bootstrap 安装 Git 后当前进程 PATH 未刷新的问题。
-- [x] 增加非交互 Profile 静默模式和 `PROFILE_NO_COMPLETIONS`。
-- [x] 增加 PSReadLine 参数能力检测和模块级异常隔离。
-- [x] 改进 wallpaper 下载、超分输出和设置壁纸失败处理。
-- [x] 修正文档中的 `lazy-lock.json`、必需依赖和外部配置数量。
-- [x] 提供 setup 安装模式（`-Minimal`/`-Full`/`-Components`/`-SkipComponents`/`-ExcludeTools` + 交互向导）。
-- [x] 向 PSCompletions 上游提交懒加载 Feature Request——issue #172 已实现并随 v7.3.0 发布
-      （模块初始化延迟到首次补全触发；更新检查改为命令后内联运行）。本仓库冷启动 ~524ms → ~300ms。
-- [x] 降低 PSCompletions 启动成本——上游 v7.3.0 内置懒初始化后已基本解决，
-      剩余为模块 JIT 固有开销（~130ms），勿再自行包装 OnIdle（见 AGENTS.md 例外条款）。
-- [x] 修复 touch 清空已存在文件内容的问题（改为 GNU 语义：存在则只更新时间戳）。
-- [x] fnm 启动开销优化：静态兑底（default 版本目录前置 PATH）+ 懒加载
-      （首次 node/npm/npx/corepack 才执行 fnm env），启动期零进程调用，
-      另提供 PROFILE_NO_FNM=1 总开关。
+不在此重复登记。历史与理由看 `git log`，仍然有效的约束已经写进 `AGENTS.md`
+（如「勿再自行包装 OnIdle」在规则 1）和 `docs/reference.md`（如 `PROFILE_NO_FNM` 开关）。

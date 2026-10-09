@@ -16,7 +16,7 @@
 | `files` | yazi 及预览依赖（ffmpeg / jq / poppler / ImageMagick） |
 | `gitui` | lazygit |
 
-参数一览：
+### 参数一览
 
 | 参数 | 作用 |
 |---|---|
@@ -70,21 +70,18 @@
 
 ## 仓库结构
 
+仓库根目录即 `$PROFILE` 目录（clone 到别处则由 setup 建链接）：
+
 ```
-Microsoft.PowerShell_profile.ps1   入口：重建 PATH → 探测工具 → 按序加载 profile/*.ps1
-profile/init-cache.ps1             工具 init 缓存（7 天 TTL + 升级即失效 + 原子写入）
-profile/env.ps1                    fnm（静态兑底+懒加载）、EDITOR/VISUAL、fzf 配色
-profile/prompt.ps1                 starship 提示符（缓存懒加载到首次 prompt）
-profile/psreadline.ps1             PSReadLine（历史搜索、配色、快捷键）
-profile/modules.ps1                zoxide 懒加载；PSCompletions / PSFzf
-profile/aliases.ps1                全部别名与函数（即使用速查）
-profile/startup.ps1                启动信息
-starship.toml / lazygit/ / yazi/   外部配置（SkipIfExists 链接，已有配置优先）
-nvim/                              LazyVim 配置（链接到 $env:LOCALAPPDATA\nvim）
-Scripts/                           独立脚本（链接管理、修复、壁纸）
-windows-terminal/                  终端配色与说明
-docs/                              文档（速查 / 参考 / FAQ）
+Microsoft.PowerShell_profile.ps1   入口（重建 PATH → 探测工具 → 加载 profile/*.ps1）
+profile/                           模块化配置（env / prompt / psreadline / modules / aliases / startup）
+Scripts/                           安装向导、链接注册表与修复、wallpaper、规范校验
+tests/                             Pester 套件
+starship.toml / lazygit/ / yazi/ / nvim/   外部配置（SkipIfExists 链接，你的存量配置优先）
+docs/ windows-terminal/            文档与终端配色
 ```
+
+逐文件职责与开发约定见仓库根的 `AGENTS.md`（唯一事实来源，不在本文重复维护）。
 
 ## 自定义
 

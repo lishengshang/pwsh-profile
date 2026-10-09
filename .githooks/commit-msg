@@ -1,0 +1,15 @@
+#!/bin/sh
+# git commit-msg hook：提交信息格式门禁（规则见 AGENTS.md 规则 8）
+# 校验逻辑单源在 Scripts/Check-CommitMsg.ps1，本文件只做转发。
+#
+# 默认不生效，每台设备启用一次：
+#   git config core.hooksPath .githooks
+# 临时跳过（不推荐）：git commit --no-verify
+if command -v pwsh >/dev/null 2>&1; then
+    EXE=pwsh
+else
+    EXE=powershell
+fi
+ROOT=$(git rev-parse --show-toplevel)
+"$EXE" -NoProfile -ExecutionPolicy Bypass -File "$ROOT/Scripts/Check-CommitMsg.ps1" -MessageFile "$1"
+exit $?
