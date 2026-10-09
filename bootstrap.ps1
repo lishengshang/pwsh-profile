@@ -1,5 +1,4 @@
-﻿#Requires -Version 5.1
-<#
+﻿<#
 .SYNOPSIS
     在全新 Windows 机器上从零引导：装 Git → 克隆仓库 → （可选）装 PowerShell 7 → 运行 setup.ps1。
 .DESCRIPTION
@@ -29,6 +28,8 @@
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File bootstrap.ps1 -SkipPwsh
 #>
+#Requires -Version 5.1
+# 位置须在帮助块之后——放在首位会让 Get-Help / -? 读不到下面的帮助注释块
 # CmdletBinding：让 -? 显示本帮助而非直接执行（param() 上方才生效）
 [CmdletBinding()]
 param(

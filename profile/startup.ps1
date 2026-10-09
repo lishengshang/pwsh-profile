@@ -1,10 +1,7 @@
 ﻿# ==============================================================
-# 启动信息（问候 + 系统信息 + 键位速查 + 耗时）
-# 显示在 "Profile loaded in ..." 耗时行之前，由入口在模块加载后调用。
-# 全部使用注册表/内置变量等轻量读取（毫秒级），刻意不引入 WMI/CIM
-# （Win32_OperatingSystem 等首次调用 ~100ms，会拖慢启动）。
-# 图标需要 Nerd Font 字体（见 windows-terminal/README.md）。
-# $env:PROFILE_NO_STARTUP=1 可关闭。
+# 启动信息（问候 + 系统信息 + 键位速查），显示在耗时行之前，由入口调用。
+# 只用注册表/内置变量等轻量读取，刻意不引入 WMI/CIM（首次调用 ~100ms 拖慢启动）。
+# 图标需要 Nerd Font（见 windows-terminal/README.md）；$env:PROFILE_NO_STARTUP=1 关闭。
 # ==============================================================
 
 function Show-StartupInfo {
@@ -17,19 +14,16 @@ function Show-StartupInfo {
     $iCpu  = [char]0xF2DB   #  fa-microchip
     $iKeys = [char]0xF11C   #  fa-keyboard-o
 
-    # Solarized 配色（24bit ANSI）；$esc 用 [char]27 而非 `e（后者是 PS7 专属转义）
+    # Solarized 24bit ANSI；$esc 用 [char]27 而非 `e（后者是 PS7 专属转义）
     $esc    = [char]27
     $cBlue  = '38;2;38;139;210'
     $cGray  = '38;2;101;123;131'
 
-    # 问候：用户名 + 日期（dddd 在中文区域显示中文星期）
-    $date = Get-Date -Format 'yyyy-MM-dd dddd'
+    $date = Get-Date -Format 'yyyy-MM-dd dddd'   # dddd 在中文区域显示中文星期
     Write-Host "$esc[${cBlue}m$iUser Hi $env:USERNAME · $date$esc[0m"
 
-    # 系统信息：OS 名称 + 版本（注册表 ~1ms，避免 WMI 慢调用）。
-    # 读取失败（非 Windows/权限异常/路径缺失）时整体降级为内置值。
-    # Win11 的 ProductName 常残留 "Windows 10 Pro"（升级/镜像），
-    # 用 CurrentBuildNumber >= 22000 判定，并附上 DisplayVersion（23H2/24H2 等）
+    # Win11 的 ProductName 常残留 "Windows 10 Pro"，用 CurrentBuildNumber >= 22000 判定，
+    # 并附 DisplayVersion（23H2/24H2 等）；读注册表失败整体降级为内置值
     $k = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -ErrorAction SilentlyContinue
     $os = if ($k) { $k.ProductName } else { $null }
     if (-not $os) { $os = 'Windows' }

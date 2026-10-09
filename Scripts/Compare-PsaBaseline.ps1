@@ -1,5 +1,4 @@
-﻿#Requires -Version 5.1
-<#
+﻿<#
 .SYNOPSIS
     PSScriptAnalyzer 新增违规门禁：与基线提交比对，仅新增违规失败。
 .DESCRIPTION
@@ -15,6 +14,8 @@
     豁免规则（profile 既定风格，见 AGENTS.md）：Write-Host / 短别名 /
     全局变量 / 未批准动词 / ShouldProcess。
 #>
+#Requires -Version 5.1
+# 位置须在帮助块之后——放在首位会让 Get-Help / -? 读不到下面的帮助注释块
 param(
     # 基线提交 SHA（CI 传入 github.event.pull_request.base.sha 或 event.before）
     [Parameter(Mandatory)][string]$BaseSha,

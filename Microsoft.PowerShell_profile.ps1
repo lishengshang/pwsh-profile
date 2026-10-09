@@ -1,13 +1,9 @@
 ﻿# ==============================================================
 # PowerShell Profile - 模块化入口
 # ==============================================================
-# 版本守卫：PowerShell 7+ 是主力支持版本；Windows PowerShell 5.1 进入
-# 兼容模式（降级加载）。各子模块语法均保持 5.1 可解析（禁用 ?. / ??
-# 等 PS7 新语法，见 AGENTS.md），可选工具与模块缺失时自动降级，
-# 因此 5.1 也能加载大部分功能；完整体验（性能优化、新特性）以 PS7+ 为准。
-# 兼容提示只对「装了 pwsh 7 却开 5.1」的场景轻提一句（多半是敲了 powershell
-# 而非 pwsh）；纯 5.1 机器（未装 pwsh 7）默认静默，不打扰只装 5.1 的用户。
-# 设环境变量 PWSH_PROFILE_QUIET=1（用户级 setx 一次即可）可彻底关闭提示。
+# 版本守卫：PS 7+ 主力支持，5.1 兼容模式降级加载（子模块语法均保持 5.1 可解析，
+# 见 AGENTS.md 规则 4）。兼容提示只对「装了 pwsh 7 却开 5.1」的场景轻提一句，
+# 纯 5.1 机器静默；PWSH_PROFILE_QUIET=1 彻底关闭。
 if ($PSVersionTable.PSVersion.Major -lt 7 -and -not $env:PWSH_PROFILE_QUIET) {
     foreach ($_pwsh in @(
             (Join-Path $env:ProgramFiles 'PowerShell\7\pwsh.exe')
@@ -21,19 +17,14 @@ if ($PSVersionTable.PSVersion.Major -lt 7 -and -not $env:PWSH_PROFILE_QUIET) {
     }
 }
 
-# 全局变量：profile 根目录，供子模块引用。
-# 用 $PSScriptRoot 而非 Split-Path $PROFILE：手动 dot-source 仓库里的入口
-# （. .\Microsoft.PowerShell_profile.ps1）时也能从当前仓库加载模块，
-# 不依赖 $PROFILE 指向的位置。
-# 注意：这是「安装目录」——外置仓库 + HardLink/Junction 部署时它指向
-# $PROFILE 目录而非 git 仓库；仓库目录另见 $global:__ProfileRepoDir。
+# profile 根目录（安装目录），供子模块引用。用 $PSScriptRoot 而非 Split-Path $PROFILE：
+# 手动 dot-source 仓库入口时也能从当前仓库加载。仓库目录另见 $global:__ProfileRepoDir。
 $global:__ProfileDir = $PSScriptRoot
 
-# 仓库目录发现（psync / wallpaper 用，发现顺序）：
-#   a. $PSScriptRoot\.git 存在（仓库即安装目录，本机直用场景）
-#   b. profile\ 是 Junction/SymbolicLink -> 解析 Target 的父目录（外置仓库 + 链接部署）
-#   c. 链接注册表（%LOCALAPPDATA%\pwsh-profile\linked-targets.json）中入口文件的 Source（Copy 降级部署）
-#   d. 均失败 -> $null（psync 会提示手动 git pull）
+# 仓库目录发现顺序：a. $PSScriptRoot 含 .git（仓库即安装目录）
+#   b. profile\ 是 Junction/SymbolicLink -> 解析 Target 父目录
+#   c. 链接注册表里入口条目的 Source（Copy 降级部署）
+#   d. 均失败 -> $null（psync 提示手动 git pull）
 $_repoDir = $null
 $_gitMeta = Get-Item -LiteralPath (Join-Path $PSScriptRoot '.git') -Force -ErrorAction SilentlyContinue
 if ($_gitMeta) {
@@ -62,9 +53,8 @@ else {
 }
 $global:__ProfileRepoDir = $_repoDir
 
-# 先从注册表重建 PATH，再探测工具——否则父进程 PATH 不完整时
-# （如从 IDE/快捷方式启动）注册表里已有的工具会探测不到。
-# 需要保留父进程 PATH 时设置 $env:PROFILE_KEEP_PARENT_PATH=1（见 README「设计说明」）。
+# 先从注册表重建 PATH 再探测工具——否则从 IDE/快捷方式启动时父进程 PATH 不完整，
+# 注册表里已有的工具会探测不到。PROFILE_KEEP_PARENT_PATH=1 保留父进程 PATH。
 if (-not $env:PROFILE_KEEP_PARENT_PATH) {
     $env:PATH = [Environment]::GetEnvironmentVariable('PATH','Machine') + ';' + [Environment]::GetEnvironmentVariable('PATH','User')
 }
@@ -75,11 +65,9 @@ $_debug = [bool]$env:PROFILE_DEBUG
 # 启动计时（Stopwatch 开销可忽略；默认显示总耗时，PROFILE_NO_TIME=1 关闭）
 $_total = [System.Diagnostics.Stopwatch]::StartNew()
 
-# 批量探测工具是否存在。
-# 用 File.Exists 遍历 PATH（.exe/.cmd/.bat），比 Get-Command 快约 5 倍：
-# Get-Command 对每个缺失名字会做 PATH × PATHEXT 全展开（11 个名字 ~190ms），
-# 这里 ~37ms。工具一律为外部可执行文件，无需 Get-Command 的命令发现语义。
-# 只列 profile 会引用 __Tools 的名字：jq 等纯外部依赖（yazi 预览自寻 PATH）不入列。
+# 批量探测外部工具。用 File.Exists 遍历 PATH（.exe/.cmd/.bat）而非 Get-Command：
+# 后者对每个缺失名字要做 PATH × PATHEXT 全展开（11 个名字 ~190ms vs 这里 ~37ms）。
+# 只列 profile 会引用 __Tools 的名字；jq 等纯外部依赖（yazi 预览自寻 PATH）不入列。
 $global:__Tools = @{}
 $_dirs = $env:PATH -split ';' | Where-Object { $_ }
 foreach ($_name in 'eza','rg','grep','fd','bat','7z','fnm','nvim','zoxide','fzf','starship','yazi','lazygit','git') {

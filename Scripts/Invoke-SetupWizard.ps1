@@ -1,5 +1,4 @@
-﻿#Requires -Version 5.1
-<#
+﻿<#
 .SYNOPSIS
     setup.ps1 的交互式安装向导：简介 → 组件勾选 → 工具预览/剔除 → 确认。
 .DESCRIPTION
@@ -9,6 +8,8 @@
     输入兜底：Read-Host 在 stdin 被重定向/EOF 时返回空串——所有提示均把空输入
     视为「接受当前默认继续」，保证意外调用（CI/管道）不会卡死或崩溃。
 #>
+#Requires -Version 5.1
+# 位置须在帮助块之后——放在首位会让 Get-Help / -? 读不到下面的帮助注释块
 
 # 组件展示元数据（菜单顺序 = 编号顺序）。Key 必须与 setup.ps1 的 $allComponents 一致。
 $script:WizardComponents = @(
