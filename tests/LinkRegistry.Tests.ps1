@@ -293,3 +293,40 @@ Describe 'ConvertFrom-LegacyLinkRegistry' {
         $entries | Should -Be @()
     }
 }
+
+Describe '__Test-IsHardLinkOf' {
+    BeforeAll {
+        $repoRoot = Split-Path $PSScriptRoot
+        . (Join-Path $repoRoot 'Scripts\LinkRegistry.ps1')
+        $root = Join-Path ([System.IO.Path]::GetTempPath()) ('pester-hl-' + [guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $root -Force | Out-Null
+        $srcFile = Join-Path $root 'src.txt'
+        Set-Content -Path $srcFile -Value 'payload'
+        $linkFile = Join-Path $root 'link.txt'
+        $null = New-Item -ItemType HardLink -Path $linkFile -Target $srcFile -ErrorAction Stop
+    }
+    AfterAll {
+        Remove-Item $root -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
+    It '同一 inode 的两个路径判定为硬链接' {
+        __Test-IsHardLinkOf -Src $srcFile -Target $linkFile | Should -BeTrue
+    }
+
+    It '源路径盘符大小写不同仍判定为硬链接' {
+        # fsutil 输出的大小写来自文件系统，源侧只做字面归一（GetFullPath 不改大小写），
+        # 所以比对必须降大小写
+        $altCase = $srcFile.Substring(0, 1).ToLowerInvariant() + $srcFile.Substring(1)
+        __Test-IsHardLinkOf -Src $altCase -Target $linkFile | Should -BeTrue
+    }
+
+    It '内容相同的独立副本不算硬链接' {
+        $copy = Join-Path $root 'copy.txt'
+        Copy-Item -Path $srcFile -Destination $copy -Force
+        __Test-IsHardLinkOf -Src $copy -Target $linkFile | Should -BeFalse
+    }
+
+    It '目标不存在时按无硬链接证据处理' {
+        __Test-IsHardLinkOf -Src $srcFile -Target (Join-Path $root 'missing.txt') | Should -BeFalse
+    }
+}

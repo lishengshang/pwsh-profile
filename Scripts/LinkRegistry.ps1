@@ -68,6 +68,28 @@ function __Invoke-WithLinkRegistryLock {
     }
 }
 
+# 内部：fsutil 判断两个路径是否指向同一 inode（硬链接）。fsutil 输出的路径不带
+# 盘符，两侧统一「去盘符 + 去尾分隔符 + 降大小写」后比对。源路径用 GetFullPath
+# 而非 Get-Item——后者在源文件已不存在时会报错，而这里只需要字面路径。
+# fsutil 不可用（非 NTFS、权限、目标不存在）时返回 $false，由调用方走降级分支。
+function __Test-IsHardLinkOf {
+    param(
+        [Parameter(Mandatory)][string]$Src,
+        [Parameter(Mandatory)][string]$Target
+    )
+    $srcFull = [System.IO.Path]::GetFullPath($Src).TrimEnd('\')
+    $srcNorm = ($srcFull -replace '^[A-Za-z]:', '').ToLowerInvariant()
+    $links = @()
+    try {
+        $links = @(fsutil hardlink list $Target 2>$null) |
+            ForEach-Object { (($_ -replace '^[A-Za-z]:', '').TrimEnd('\')).ToLowerInvariant() }
+    }
+    catch {
+        $links = @()   # 按「无硬链接证据」处理
+    }
+    return ($links -contains $srcNorm)
+}
+
 # 内部：按磁盘状态严格认领受管链接类型——只认有证据的 SymbolicLink/Junction
 # （且指向仓库源）与 HardLink（fsutil 同 inode）；普通文件/目录返回 $null 不认领
 # （内容相同 ≠ 受本项目管理），交给 setup 下次部署按「未登记」重新接管。
@@ -88,17 +110,7 @@ function __Get-ManagedLinkTypeFromDisk {
         return $null
     }
     if ($item.PSIsContainer) { return $null }
-    # 文件：fsutil 列同 inode 全部路径（不带盘符），包含仓库源即 HardLink
-    $srcNorm = ($srcFull -replace '^[A-Za-z]:', '').ToLowerInvariant()
-    $links = @()
-    try {
-        $links = (fsutil hardlink list $Target) |
-            ForEach-Object { (($_ -replace '^[A-Za-z]:', '').TrimEnd('\')).ToLowerInvariant() }
-    }
-    catch {
-        $links = @()   # fsutil 不可用/报错时按无证据处理
-    }
-    if ($links -contains $srcNorm) { return 'HardLink' }
+    if (__Test-IsHardLinkOf -Src $Src -Target $Target) { return 'HardLink' }
     return $null
 }
 
@@ -164,10 +176,7 @@ function ConvertFrom-LegacyLinkRegistry {
                 $type = 'CopyDirectory'
             }
             else {
-                $srcNorm = ((Get-Item $src).FullName.TrimEnd('\')) -replace '^[A-Za-z]:', ''
-                $links = (fsutil hardlink list $t 2>$null) |
-                    ForEach-Object { ($_ -replace '^[A-Za-z]:', '').Trim() }
-                $type = if ($links -contains $srcNorm) { 'HardLink' } else { 'Copy' }
+                $type = if (__Test-IsHardLinkOf -Src $src -Target $t) { 'HardLink' } else { 'Copy' }
             }
         }
         $entries += [pscustomobject]@{ Target = $t; Source = $src; LinkType = $type }
@@ -243,11 +252,8 @@ function Get-ManagedLinkState ([string]$src, [string]$target, [string]$RegistryP
         }
         return @{ IsManaged = $false; LinkType = $null }
     }
-    # 文件：先查 HardLink 关系（fsutil 输出同 inode 全部路径，不带盘符）
-    $srcNorm = ($srcFull -replace '^[A-Za-z]:', '').ToLowerInvariant()
-    $links = (fsutil hardlink list $target 2>$null) |
-        ForEach-Object { (($_ -replace '^[A-Za-z]:', '').TrimEnd('\')).ToLowerInvariant() }
-    if ($links -contains $srcNorm) { return @{ IsManaged = $true; LinkType = 'HardLink' } }
+    # 文件：先查 HardLink 关系
+    if (__Test-IsHardLinkOf -Src $src -Target $target) { return @{ IsManaged = $true; LinkType = 'HardLink' } }
     # 普通文件：注册表登记为 Copy 且 Source 匹配时，内容一致才算管理
     if ($entry -and $entry.LinkType -eq 'Copy' -and
         (([System.IO.Path]::GetFullPath($entry.Source).TrimEnd('\')) -ieq $srcFull)) {
