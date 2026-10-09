@@ -116,47 +116,43 @@ function Invoke-ConfigLinkDeployment {
             New-Item -ItemType Directory -Path $parent -Force | Out-Null
         }
 
+        # 链接类型在此统一决定，注册表登记收敛到循环末尾的单一调用点
+        $isDir = (Get-Item -LiteralPath $src).PSIsContainer
+        $linkType = $null
         if ($useSymlink) {
             $null = New-Item -ItemType SymbolicLink -Path $item.Target -Target $src -Force
             Write-Host "已链接: $($item.Source) -> $($item.Target)" -ForegroundColor Green
-            Set-LinkRegistryEntry -Path $RegistryPath -Target $item.Target -Source $src -LinkType 'SymbolicLink'
+            $linkType = 'SymbolicLink'
         }
         else {
             # 无符号链接权限时的回退：目录用 Junction、文件用 HardLink（均无需特权，
             # 且和符号链接一样「仓库即实体」，保证改仓库文件即刻生效、不产生两份副本）
-            $isDir = (Get-Item $src).PSIsContainer
-            $linked = $false
-            if ($isDir) {
-                try {
-                    $null = New-Item -ItemType Junction -Path $item.Target -Target $src -ErrorAction Stop
-                    $linked = $true
-                } catch { }
+            $kind = 'HardLink'; $label = 'hardlink'
+            if ($isDir) { $kind = 'Junction'; $label = 'junction' }
+            try {
+                $null = New-Item -ItemType $kind -Path $item.Target -Target $src -ErrorAction Stop
+                Write-Host "已链接($label): $($item.Source) -> $($item.Target)" -ForegroundColor Green
+                $linkType = $kind
             }
-            else {
-                try {
-                    $null = New-Item -ItemType HardLink -Path $item.Target -Target $src -ErrorAction Stop
-                    $linked = $true
-                } catch { }
+            catch {
+                Write-Debug "创建 $kind 失败，降级为复制: $($_.Exception.Message)"
             }
-            if ($linked) {
-                $linkType = if ($isDir) { 'Junction' } else { 'HardLink' }
-                Write-Host "已链接($($(if ($isDir) {'junction'} else {'hardlink'}))): $($item.Source) -> $($item.Target)" -ForegroundColor Green
-                Set-LinkRegistryEntry -Path $RegistryPath -Target $item.Target -Source $src -LinkType $linkType
-                continue
+            if (-not $linkType) {
+                # 最终回退：Copy 模式（不实时同步；文件由 Repair 按哈希刷新、
+                # 目录由 Repair 用 robocopy 镜像同步，psync 拉取后自动对齐）
+                if ($isDir) {
+                    Copy-Item -Path $src -Destination $item.Target -Recurse -Force
+                    $linkType = 'CopyDirectory'
+                }
+                else {
+                    Copy-Item -Path $src -Destination $item.Target -Force
+                    $linkType = 'Copy'
+                }
+                $copyDeployed = $true
+                Write-Host "已复制: $($item.Source) -> $($item.Target)" -ForegroundColor Green
             }
-            # 最终回退：Copy 模式（不实时同步；文件由 Repair 按哈希刷新、
-            # 目录由 Repair 用 robocopy 镜像同步，psync 拉取后自动对齐）
-            if ((Get-Item $src).PSIsContainer) {
-                Copy-Item -Path $src -Destination $item.Target -Recurse -Force
-                Set-LinkRegistryEntry -Path $RegistryPath -Target $item.Target -Source $src -LinkType 'CopyDirectory'
-            }
-            else {
-                Copy-Item -Path $src -Destination $item.Target -Force
-                Set-LinkRegistryEntry -Path $RegistryPath -Target $item.Target -Source $src -LinkType 'Copy'
-            }
-            $copyDeployed = $true
-            Write-Host "已复制: $($item.Source) -> $($item.Target)" -ForegroundColor Green
         }
+        Set-LinkRegistryEntry -Path $RegistryPath -Target $item.Target -Source $src -LinkType $linkType
     }
 
     # 备份目录治理：无论本次是否新建备份都执行，清理历史遗留（保留最近 3 份）
