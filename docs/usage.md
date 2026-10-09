@@ -22,13 +22,16 @@
 | 命令 | 说明 |
 |---|---|
 | `gs` / `ga` / `gaa` | status / add / add --all |
-| `gcm <msg>` / `gc` | commit -m / commit |
-| `gp` / `gpl` / `gup` | push / pull / pull --rebase |
-| `gl` / `glog` | 日志（图形+装饰）/ 详细日志（颜色+日期/作者） |
+| `gpl` / `gup` | pull / pull --rebase |
+| `glog` | 详细日志（图形 + 颜色 + 日期/作者） |
 | `gd` / `gds` | diff / diff --staged |
-| `gco` / `gcb` / `gb` / `gbn` | checkout / checkout -b / branch / 当前分支名 |
+| `gco` / `gb` / `gbn` | checkout / branch / 当前分支名 |
 | `gst` / `grs` / `gclean` | stash / restore / 清理已合并分支（保护 main/master/dev；支持 `-WhatIf` 预览、`-Confirm` 逐个确认） |
 | `gquick <msg>` | add --all → commit（失败即中止；默认不推送，`-Push` 才推送） |
+
+> 提交/推送/新建分支不提供简写：`gcm`/`gc`/`gp`/`gl`/`gcb` 会被 PowerShell 内置别名
+> （Get-Command/Get-Content/Get-ItemProperty/Get-Location/Get-Clipboard）遮蔽，别名优先级高于
+> 函数，定义出来也不生效。直接用 `git commit` / `git push` / `git checkout -b`，或 `gquick`。
 
 ## 系统与网络
 

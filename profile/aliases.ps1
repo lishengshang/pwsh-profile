@@ -55,9 +55,8 @@ if ($global:__Tools.ContainsKey('eza')) {
 # ==============================================================
 # Profile 管理
 # ==============================================================
-# 调用 $env:EDITOR。它可能含参数（如 "nvim --clean"）甚至带引号的完整路径
-# （如 '"C:\Program Files\Neovim\bin\nvim.exe" --clean'——按空白切分会把
-# 带空格路径切碎）。约定：带空格的路径必须加双引号，其余按空白切分参数。
+# 调 $env:EDITOR。它可能含参数（"nvim --clean"）甚至带引号的空格路径
+# （'"C:\Program Files\...\nvim.exe" --clean'），约定：带空格的路径必须加双引号。
 # 返回 $false 表示未设置 EDITOR；启动失败/异常退出码给出警告。
 function __Invoke-Editor ([string]$Path) {
     if (-not $env:EDITOR) { return $false }
@@ -187,18 +186,17 @@ if ($global:__Tools.ContainsKey('bat')) {
 # ==============================================================
 # Git
 # ==============================================================
+# 注意：gcm/gc/gp/gl/gcb 这几个名字不提供——命令解析优先级为 Alias > Function，
+# 它们被内置别名（Get-Command/Get-Content/Get-ItemProperty/Get-Location/Get-Clipboard）
+# 遮蔽，定义出来永不生效且会让使用者误以为已提交/已推送。勿再加回，需要时用
+# gquick 或直接的 git 命令。
 function gs   { git status }
 function ga   { git add @args }
 function gaa  { git add --all }
-function gcm  { git commit -m @args }
-function gc   { git commit @args }
-function gp   { git push @args }
 function gpl  { git pull @args }
-function gl   { git log --oneline --graph --decorate --all @args }
 function gd   { git diff @args }
 function gds  { git diff --staged @args }
 function gco  { git checkout @args }
-function gcb  { git checkout -b @args }
 function gb   { git branch @args }
 function gst  { git stash @args }
 function grs  { git restore @args }
@@ -216,7 +214,7 @@ function gquick {
         git push
     }
     else {
-        Write-Host '已提交（未推送）。推送: gp' -ForegroundColor DarkGray
+        Write-Host '已提交（未推送）。推送: git push' -ForegroundColor DarkGray
     }
 }
 

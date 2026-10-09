@@ -35,7 +35,7 @@ cd <目录>; .\setup.ps1
 |---|---|
 | `ll` / `lt` | eza 长格式 / 树形列表（图标 + git 状态） |
 | `z <目录>` | zoxide 智能跳转 |
-| `gs` / `gcm <msg>` / `gp` | git status / commit / push |
+| `gs` / `gquick <msg>` | git status / 一键提交（推送用 `git push`） |
 | `lg` | lazygit 终端 git UI |
 | `y` | yazi 文件管理器（退出时 cd 到浏览目录） |
 | `grep` / `find` / `cat` | ripgrep / fd / bat（缺失自动回退内置命令） |
@@ -43,7 +43,7 @@ cd <目录>; .\setup.ps1
 | `psync` | 拉取本仓库最新配置（多设备同步） |
 | `ep` / `ch` | 编辑 profile / 当前目录打开 VS Code |
 
-全部 60+ 别名与函数见 [使用速查](docs/usage.md)。
+全部别名与函数见 [使用速查](docs/usage.md)。
 
 ## 文档
 
