@@ -179,6 +179,37 @@ Describe 'Repair-ConfigLinks 五类链接修复' {
         Invoke-TestRepair @{ Target = $tgt; Source = $src; LinkType = 'FutureType' } -RegistryPath $reg -ScriptPath $repairScript
         Get-Content $tgt | Should -Be 'user-own-data'
     }
+
+    # 回归：调用方 setup.ps1 设了 $ErrorActionPreference=Stop 并以 & 调用修复脚本，
+    # 单条链接的任何变更失败必须被逐条 catch 住——否则整轮修复中断、setup 连带失败，
+    # 排在后面的条目停留在"半修复"状态。
+    It '单条修复失败不中断其余条目，也不向 Stop 语义的调用方抛出' {
+        $srcFile = Join-Path $src 'app.toml'
+        Set-Content -Path $srcFile -Value 'v3'
+        $okTarget = Join-Path $case 'ok\app.toml'
+        # 必然失败的条目排在前面：其目标的父目录路径上是个普通文件，建目录与复制都做不到
+        $blocker = Join-Path $case 'blocked'
+        Set-Content -Path $blocker -Value 'not-a-dir'
+        $poisonTarget = Join-Path (Join-Path $blocker 'sub') 'app.toml'
+
+        Save-LinkRegistryEntries -Path $reg -Entries @(
+            [pscustomobject]@{ Target = $poisonTarget; Source = $srcFile; LinkType = 'Copy' }
+            [pscustomobject]@{ Target = $okTarget; Source = $srcFile; LinkType = 'Copy' }
+        )
+
+        $prev = $ErrorActionPreference
+        $ErrorActionPreference = 'Stop'
+        try {
+            { & $repairScript -Registry $reg } | Should -Not -Throw
+        }
+        finally {
+            $ErrorActionPreference = $prev
+        }
+
+        # 失败条目被跳过，其后条目照常修复完成
+        Test-Path $okTarget | Should -BeTrue
+        Get-Content $okTarget | Should -Be 'v3'
+    }
 }
 
 Describe 'Repair-ConfigLinks SymbolicLink 分支（按环境二选一断言）' {
