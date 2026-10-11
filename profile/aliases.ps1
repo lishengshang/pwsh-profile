@@ -312,7 +312,7 @@ function wum {
 
 # 内部：端口占用查询（Get-PortProcess 与 Stop-Port 共用）。空占用时打印提示并
 # 返回 $null，由调用方决定展示形态
-function __Get-PortConnections {
+function __Get-PortConnection {
     param([Parameter(Mandatory)][int]$Port)
     $conns = Get-NetTCPConnection -LocalPort $Port -ErrorAction SilentlyContinue
     if (-not $conns) {
@@ -324,7 +324,7 @@ function __Get-PortConnections {
 
 function Get-PortProcess {
     param([Parameter(Mandatory)][int]$Port)
-    $conns = __Get-PortConnections -Port $Port
+    $conns = __Get-PortConnection -Port $Port
     if (-not $conns) { return }
     $conns | Sort-Object OwningProcess -Unique | ForEach-Object {
         $proc = Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue
@@ -338,7 +338,7 @@ Set-Alias -Name portof -Value Get-PortProcess
 function Stop-Port {
     [CmdletBinding(SupportsShouldProcess)]
     param([Parameter(Mandatory)][int]$Port)
-    $conns = __Get-PortConnections -Port $Port
+    $conns = __Get-PortConnection -Port $Port
     if (-not $conns) { return }
     $conns.OwningProcess | Sort-Object -Unique | ForEach-Object {
         $proc = Get-Process -Id $_ -ErrorAction SilentlyContinue
