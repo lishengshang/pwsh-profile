@@ -5,8 +5,8 @@
 
 Describe 'Resolve-SetupComponents 组件解析矩阵' {
     BeforeAll {
-        $repoRoot = Split-Path $PSScriptRoot
-        . (Join-Path $repoRoot 'Scripts\Resolve-SetupComponents.ps1')
+        . (Join-Path $PSScriptRoot 'TestHelper.ps1')
+        . (Join-Path (Get-TestRepoRoot) 'Scripts\Resolve-SetupComponents.ps1')
         $all = 'core', 'completion', 'editor', 'files', 'gitui'
         $standard = 'core', 'completion', 'gitui'
         # 非交互注入的调用模板（splat + 常量组件表）

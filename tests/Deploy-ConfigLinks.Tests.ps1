@@ -8,20 +8,11 @@
 
 Describe 'Invoke-ConfigLinkDeployment' {
     BeforeAll {
-        $repoRoot = Split-Path $PSScriptRoot
+        . (Join-Path $PSScriptRoot 'TestHelper.ps1')
+        $repoRoot = Get-TestRepoRoot
         . (Join-Path $repoRoot 'Scripts\LinkRegistry.ps1')
         . (Join-Path $repoRoot 'Scripts\Deploy-ConfigLinks.ps1')
-        $root = Join-Path ([System.IO.Path]::GetTempPath()) ("pester-deploy-" + [guid]::NewGuid().ToString('N'))
-        New-Item -ItemType Directory -Path $root -Force | Out-Null
-
-        # 取链接的第一目标路径（5.1 下 .Target 是 String[]）
-        function Get-LinkTargetPath {
-            param([string]$Path)
-            $prop = @((Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue).Target) |
-                Select-Object -First 1
-            if (-not $prop) { return $null }
-            return ([System.IO.Path]::GetFullPath([string]$prop)).TrimEnd('\')
-        }
+        $root = New-TestTempRoot 'pester-deploy'
     }
     AfterAll {
         Remove-Item $root -Recurse -Force -ErrorAction SilentlyContinue

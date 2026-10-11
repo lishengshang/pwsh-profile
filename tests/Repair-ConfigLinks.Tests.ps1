@@ -8,12 +8,12 @@
 
 Describe 'Repair-ConfigLinks 五类链接修复' {
     BeforeAll {
-        $repoRoot = Split-Path $PSScriptRoot
+        . (Join-Path $PSScriptRoot 'TestHelper.ps1')
+        $repoRoot = Get-TestRepoRoot
         . (Join-Path $repoRoot 'Scripts\LinkRegistry.ps1')
         . (Join-Path $repoRoot 'Scripts\Deploy-ConfigLinks.ps1')
         $repairScript = Join-Path $repoRoot 'Scripts\Repair-ConfigLinks.ps1'
-        $root = Join-Path ([System.IO.Path]::GetTempPath()) ("pester-repair-" + [guid]::NewGuid().ToString('N'))
-        New-Item -ItemType Directory -Path $root -Force | Out-Null
+        $root = New-TestTempRoot 'pester-repair'
 
         # 按登记类型写一条注册表记录并运行修复（显式传参，不依赖跨块作用域）
         function Invoke-TestRepair {
@@ -26,15 +26,6 @@ Describe 'Repair-ConfigLinks 五类链接修复' {
                 }
             )
             & $ScriptPath -Registry $RegistryPath
-        }
-
-        # 取链接的第一目标路径（5.1 下 .Target 是 String[]）
-        function Get-LinkTargetPath {
-            param([string]$Path)
-            $prop = @((Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue).Target) |
-                Select-Object -First 1
-            if (-not $prop) { return $null }
-            return ([System.IO.Path]::GetFullPath([string]$prop)).TrimEnd('\')
         }
     }
     AfterAll {
@@ -214,12 +205,12 @@ Describe 'Repair-ConfigLinks 五类链接修复' {
 
 Describe 'Repair-ConfigLinks SymbolicLink 分支（按环境二选一断言）' {
     BeforeAll {
-        $repoRoot = Split-Path $PSScriptRoot
+        . (Join-Path $PSScriptRoot 'TestHelper.ps1')
+        $repoRoot = Get-TestRepoRoot
         . (Join-Path $repoRoot 'Scripts\LinkRegistry.ps1')
         . (Join-Path $repoRoot 'Scripts\Deploy-ConfigLinks.ps1')
         $repairScript = Join-Path $repoRoot 'Scripts\Repair-ConfigLinks.ps1'
-        $root = Join-Path ([System.IO.Path]::GetTempPath()) ("pester-repair-sl-" + [guid]::NewGuid().ToString('N'))
-        New-Item -ItemType Directory -Path $root -Force | Out-Null
+        $root = New-TestTempRoot 'pester-repair-sl'
         $symlinkAvailable = Test-SymlinkAvailable
     }
     AfterAll {

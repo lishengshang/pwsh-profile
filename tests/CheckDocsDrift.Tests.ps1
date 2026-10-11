@@ -5,10 +5,9 @@
 
 Describe 'Check-DocsDrift 文档防漂移校验' {
     BeforeAll {
-        $repoRoot = Split-Path $PSScriptRoot
-        $script = Join-Path $repoRoot 'Scripts\Check-DocsDrift.ps1'
-        $root = Join-Path ([System.IO.Path]::GetTempPath()) ("pester-drift-" + [guid]::NewGuid().ToString('N'))
-        New-Item -ItemType Directory -Path $root -Force | Out-Null
+        . (Join-Path $PSScriptRoot 'TestHelper.ps1')
+        $script = Join-Path (Get-TestRepoRoot) 'Scripts\Check-DocsDrift.ps1'
+        $root = New-TestTempRoot 'pester-drift'
 
         # 全覆盖迷你仓库：usage 收录 alpha（公开函数）与 al（别名）；
         # beta 由别名 al 代表、__hidden 私有——两者都不要求收录

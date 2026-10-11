@@ -6,10 +6,9 @@
 
 Describe 'Restore-LinkRegistry 损坏自愈' {
     BeforeAll {
-        $repoRoot = Split-Path $PSScriptRoot
-        . (Join-Path $repoRoot 'Scripts\LinkRegistry.ps1')
-        $root = Join-Path ([System.IO.Path]::GetTempPath()) ("pester-restore-" + [guid]::NewGuid().ToString('N'))
-        New-Item -ItemType Directory -Path $root -Force | Out-Null
+        . (Join-Path $PSScriptRoot 'TestHelper.ps1')
+        . (Join-Path (Get-TestRepoRoot) 'Scripts\LinkRegistry.ps1')
+        $root = New-TestTempRoot 'pester-restore'
     }
     AfterAll {
         Remove-Item $root -Recurse -Force -ErrorAction SilentlyContinue
@@ -99,8 +98,8 @@ Describe 'Restore-LinkRegistry 损坏自愈' {
 
 Describe '__Invoke-WithLinkRegistryLock 并发锁' {
     BeforeAll {
-        $repoRoot = Split-Path $PSScriptRoot
-        . (Join-Path $repoRoot 'Scripts\LinkRegistry.ps1')
+        . (Join-Path $PSScriptRoot 'TestHelper.ps1')
+        . (Join-Path (Get-TestRepoRoot) 'Scripts\LinkRegistry.ps1')
     }
 
     It '锁内脚本块正常执行并透传返回值' {
@@ -155,11 +154,11 @@ Start-Sleep -Seconds 3
 
 Describe 'Remove-StaleLinkBackup 备份目录治理' {
     BeforeAll {
-        $repoRoot = Split-Path $PSScriptRoot
+        . (Join-Path $PSScriptRoot 'TestHelper.ps1')
+        $repoRoot = Get-TestRepoRoot
         . (Join-Path $repoRoot 'Scripts\LinkRegistry.ps1')
         . (Join-Path $repoRoot 'Scripts\Deploy-ConfigLinks.ps1')
-        $root = Join-Path ([System.IO.Path]::GetTempPath()) ("pester-backup-" + [guid]::NewGuid().ToString('N'))
-        New-Item -ItemType Directory -Path $root -Force | Out-Null
+        $root = New-TestTempRoot 'pester-backup'
     }
     AfterAll {
         Remove-Item $root -Recurse -Force -ErrorAction SilentlyContinue

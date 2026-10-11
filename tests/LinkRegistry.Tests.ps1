@@ -6,10 +6,9 @@
 
 Describe 'Get-LinkRegistryEntries' {
     BeforeAll {
-        $repoRoot = Split-Path $PSScriptRoot
-        . (Join-Path $repoRoot 'Scripts\LinkRegistry.ps1')
-        $root = Join-Path ([System.IO.Path]::GetTempPath()) ("pester-reg-" + [guid]::NewGuid().ToString('N'))
-        New-Item -ItemType Directory -Path $root -Force | Out-Null
+        . (Join-Path $PSScriptRoot 'TestHelper.ps1')
+        . (Join-Path (Get-TestRepoRoot) 'Scripts\LinkRegistry.ps1')
+        $root = New-TestTempRoot 'pester-reg'
     }
     AfterAll {
         Remove-Item $root -Recurse -Force -ErrorAction SilentlyContinue
@@ -62,10 +61,9 @@ Describe 'Get-LinkRegistryEntries' {
 
 Describe 'Save-LinkRegistryEntries / Set-LinkRegistryEntry' {
     BeforeAll {
-        $repoRoot = Split-Path $PSScriptRoot
-        . (Join-Path $repoRoot 'Scripts\LinkRegistry.ps1')
-        $root = Join-Path ([System.IO.Path]::GetTempPath()) ("pester-reg-" + [guid]::NewGuid().ToString('N'))
-        New-Item -ItemType Directory -Path $root -Force | Out-Null
+        . (Join-Path $PSScriptRoot 'TestHelper.ps1')
+        . (Join-Path (Get-TestRepoRoot) 'Scripts\LinkRegistry.ps1')
+        $root = New-TestTempRoot 'pester-reg'
     }
     AfterAll {
         Remove-Item $root -Recurse -Force -ErrorAction SilentlyContinue
@@ -108,11 +106,11 @@ Describe 'Save-LinkRegistryEntries / Set-LinkRegistryEntry' {
 
 Describe 'Get-ManagedLinkState 判定规则' {
     BeforeAll {
-        $repoRoot = Split-Path $PSScriptRoot
+        . (Join-Path $PSScriptRoot 'TestHelper.ps1')
+        $repoRoot = Get-TestRepoRoot
         . (Join-Path $repoRoot 'Scripts\LinkRegistry.ps1')
         . (Join-Path $repoRoot 'Scripts\Deploy-ConfigLinks.ps1')
-        $root = Join-Path ([System.IO.Path]::GetTempPath()) ("pester-state-" + [guid]::NewGuid().ToString('N'))
-        New-Item -ItemType Directory -Path $root -Force | Out-Null
+        $root = New-TestTempRoot 'pester-state'
     }
     AfterAll {
         Remove-Item $root -Recurse -Force -ErrorAction SilentlyContinue
@@ -218,10 +216,9 @@ Describe 'Get-ManagedLinkState 判定规则' {
 
 Describe '__Test-IsHardLinkOf' {
     BeforeAll {
-        $repoRoot = Split-Path $PSScriptRoot
-        . (Join-Path $repoRoot 'Scripts\LinkRegistry.ps1')
-        $root = Join-Path ([System.IO.Path]::GetTempPath()) ('pester-hl-' + [guid]::NewGuid().ToString('N'))
-        New-Item -ItemType Directory -Path $root -Force | Out-Null
+        . (Join-Path $PSScriptRoot 'TestHelper.ps1')
+        . (Join-Path (Get-TestRepoRoot) 'Scripts\LinkRegistry.ps1')
+        $root = New-TestTempRoot 'pester-hl'
         $srcFile = Join-Path $root 'src.txt'
         Set-Content -Path $srcFile -Value 'payload'
         $linkFile = Join-Path $root 'link.txt'
