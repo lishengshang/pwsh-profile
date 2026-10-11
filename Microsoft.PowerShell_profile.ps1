@@ -46,7 +46,10 @@ else {
                 $_e = @(Get-Content $_reg -Raw | ConvertFrom-Json) |
                     Where-Object { $_.Target -ieq $PROFILE } | Select-Object -First 1
                 if ($_e -and $_e.Source) { $_repoDir = Split-Path $_e.Source }
-            } catch { }
+            } catch {
+                # 注册表损坏按未登记处理（仓库发现还有 .git/junction 两级降级），只留调试线索
+                Write-Debug "profile 链接注册表读取失败: $_"
+            }
         }
     }
     # 发现的目录必须真的含 .git 才算仓库（防止误判随机目录）
@@ -127,7 +130,9 @@ $_quiet = [bool]$env:PROFILE_QUIET -or
 
 # 启动信息（问候/系统信息/键位速查）+ 总耗时（startup.ps1 加载失败时不致命）
 if (-not $_quiet) {
-    try { Show-StartupInfo } catch { }
+    try { Show-StartupInfo } catch {
+        Write-Debug "Show-StartupInfo 失败（不影响后续加载）: $_"
+    }
 }
 if ($_debug) {
     Write-Host "TOTAL: $($_total.ElapsedMilliseconds)ms" -ForegroundColor Green

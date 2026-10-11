@@ -8,6 +8,10 @@ $global:__starshipCache = "$env:TEMP\starship-init-cache-v2.ps1"
 $script:__starshipReady = $false
 
 function prompt {
+    # starship init 输出必须 eval（官方安装方式）；占位覆盖是懒加载设计本身
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingInvokeExpression', '',
+        Justification = 'starship init 输出是完整 init 脚本，官方指定 eval 安装')]
+    param()
     if (-not $script:__starshipReady) {
         $script:__starshipReady = $true
         $null = Initialize-CachedInit -Command 'starship' -CacheFile $global:__starshipCache -Arguments @('init','powershell','--print-full-init')

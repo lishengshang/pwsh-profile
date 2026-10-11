@@ -14,6 +14,9 @@ if ($global:__Tools.ContainsKey('fnm') -and -not $env:PROFILE_NO_FNM) {
     # 占位函数：首次调用触发初始化。不能用 zoxide 那种「init 重定义自身」模式——
     # fnm env 只设环境变量不重定义命令，须显式按 Application 解析避开占位函数自身。
     function __Ensure-Fnm {
+        # fnm env 输出必须 eval（官方安装方式），无等价的非 iex 写法
+        [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingInvokeExpression', '',
+            Justification = 'fnm env 输出是 setenv 脚本，官方指定 eval 安装')]
         param([string]$Cmd)
         if (-not $script:__fnmReady) {
             $script:__fnmReady = $true
@@ -37,7 +40,13 @@ if ($global:__Tools.ContainsKey('fnm') -and -not $env:PROFILE_NO_FNM) {
         if ($real) { & $real.Source @args }
         else { Write-Host "找不到 $Cmd（fnm 未安装任何 Node 版本？运行 fnm install <版本>）" -ForegroundColor Yellow }
     }
-    function node     { __Ensure-Fnm node @args }
+    # PSA 把 node 认作 PowerShell 内置命令——实为 fnm 占位转发，覆盖即设计本身
+    function node {
+        [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidOverwritingBuiltInCmdlets', 'node',
+            Justification = 'fnm 占位转发函数，非 PowerShell 内置命令')]
+        param()
+        __Ensure-Fnm node @args
+    }
     function npm      { __Ensure-Fnm npm @args }
     function npx      { __Ensure-Fnm npx @args }
     function corepack { __Ensure-Fnm corepack @args }

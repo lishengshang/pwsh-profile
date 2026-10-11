@@ -40,8 +40,15 @@ $excludedRules = @(
 )
 
 function Get-ViolationCountByRule {
-    param([string]$Path)
-    $records = Invoke-ScriptAnalyzer -Path $Path -ExcludeRule $excludedRules -ErrorAction SilentlyContinue
+    param(
+        [string]$Path,
+        # tests/ 的 BeforeAll 定义、It 块使用走 Pester 动态作用域，静态分析必然
+        # 误报 PSUseDeclaredVarsMoreThanAssignments（存量 15 条全源于此），按目录豁免
+        [switch]$IsTest
+    )
+    $rules = @($excludedRules)
+    if ($IsTest) { $rules += 'PSUseDeclaredVarsMoreThanAssignments' }
+    $records = Invoke-ScriptAnalyzer -Path $Path -ExcludeRule $rules -ErrorAction SilentlyContinue
     $counts = @{}
     foreach ($r in @($records)) {
         if (-not $r.RuleName) { continue }
@@ -64,7 +71,7 @@ foreach ($rel in $changed) {
     $abs = Join-Path $RepoRoot $rel
     if (-not (Test-Path -LiteralPath $abs)) { continue }
 
-    $current = Get-ViolationCountByRule -Path $abs
+    $current = Get-ViolationCountByRule -Path $abs -IsTest:($rel -like 'tests/*')
 
     # 取基线提交里的文件版本到临时文件（保留原文件名以辅助解析器）
     $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("psa-base-" + [guid]::NewGuid().ToString('N') + '-' + (Split-Path $rel -Leaf))
@@ -76,7 +83,7 @@ foreach ($rel in $changed) {
         # 用 Start-Process 把字节流直写文件，绕过管道编码
         $null = Start-Process -FilePath 'git' -ArgumentList @('show', "$($BaseSha):$rel") `
             -RedirectStandardOutput $tmp -NoNewWindow -Wait -PassThru
-        $base = Get-ViolationCountByRule -Path $tmp
+        $base = Get-ViolationCountByRule -Path $tmp -IsTest:($rel -like 'tests/*')
     }
     Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
 

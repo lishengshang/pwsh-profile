@@ -44,6 +44,10 @@ if ($global:__Tools.ContainsKey('eza')) {
     # （该模块加载很重 ~100-400ms，不能进启动路径）；缺失或加载失败时静默降级为无图标
     $script:__TerminalIconsLoaded = $false
     function __Ensure-TerminalIcons {
+        # Icons 是模块专名 Terminal-Icons 的一部分，非命名疏忽
+        [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '',
+            Justification = 'Terminal-Icons 模块专名')]
+        param()
         if ($script:__TerminalIconsLoaded) { return }
         $script:__TerminalIconsLoaded = $true
         # 临时压低 ErrorActionPreference，避免模块内部错误（如设置目录不可写）刷屏
@@ -283,7 +287,9 @@ function Get-PublicIP {
     foreach ($u in $apis) {
         try {
             return (Invoke-RestMethod -Uri $u -TimeoutSec 5).Trim()
-        } catch { }
+        } catch {
+            Write-Verbose "API 不可达（换下一个）: $u — $_"
+        }
     }
     Write-Host '无法获取公网 IP（网络问题或所有 API 均不可达）' -ForegroundColor Yellow
 }

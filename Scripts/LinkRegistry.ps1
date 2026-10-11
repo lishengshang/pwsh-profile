@@ -45,6 +45,9 @@ function __ConvertFrom-RegistryJson {
 }
 
 function Get-LinkRegistryEntries {
+    # 复数名词为既有公共接口名（tests/setup/Repair 多处调用），且返回条目集合
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '',
+        Justification = '返回登记条目集合，复数语义正确')]
     param([Parameter(Mandatory)][string]$Path)
     if (-not (Test-Path $Path)) { return @() }
     try { return __ConvertFrom-RegistryJson (Get-Content $Path -Raw) }
@@ -170,6 +173,8 @@ function Restore-LinkRegistry {
 }
 
 function Save-LinkRegistryEntries {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '',
+        Justification = '写入登记条目集合，复数语义正确')]
     param(
         [Parameter(Mandatory)][string]$Path,
         [Parameter(Mandatory)]$Entries
