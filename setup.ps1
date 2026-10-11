@@ -39,56 +39,14 @@ $ErrorActionPreference = 'Stop'
 $allComponents      = 'core', 'completion', 'editor', 'files', 'gitui'
 $standardComponents = 'core', 'completion', 'gitui'
 
-# 容忍逗号分隔的单 token：pwsh -File 下数组参数不会贪心收集后续参数，
-# "-Components core,gitui" 会整体作为单个字符串传入；交互式会话里两种写法
-# 都已是数组，按逗号再拆一次是无害的幂等操作。
-function __NormalizeComponents ([string[]]$List) {
-    @($List | ForEach-Object { $_ -split '\s*,\s*' } | Where-Object { $_ })
-}
-
-if ($Minimal -and $Full) {
-    throw '-Minimal 与 -Full 互斥，请只选其一（或改用 -Components 显式指定）。'
-}
-$Components     = __NormalizeComponents $Components
-$SkipComponents = __NormalizeComponents $SkipComponents
-if ($Components) {
-    $effectiveComponents = @($Components | Where-Object { $_ -in $allComponents })
-    $unknown = @($Components | Where-Object { $_ -notin $allComponents })
-    if ($unknown) {
-        Write-Warning "未知组件将被忽略: $($unknown -join ', ')（合法值: $($allComponents -join ', ')）"
-    }
-    # 显式指定却全部无效，几乎必然是调用方式/拼写错误——静默空集会让用户
-    # 误以为装好了，必须终止
-    if (-not $effectiveComponents) {
-        throw "-Components 未包含任何合法组件（收到: $($Components -join ', ')；合法值: $($allComponents -join ', ')）。"
-    }
-} elseif ($Minimal) {
-    $effectiveComponents = @('core')
-} elseif ($Full) {
-    $effectiveComponents = @($allComponents)
-} elseif ($SkipComponents) {
-    # 只给了 -SkipComponents：视为显式选择（基于 Standard 剔除，不进向导），
-    # 后续 SkipComponents 过滤块会应用并在剔空时报错
-    $effectiveComponents = @($standardComponents)
-} else {
-    # 无显式组件参数：交互终端进入向导（-Wizard 可强制、优先于 -Yes）；
-    # -Yes 或 stdin 被重定向（CI/管道）时保持原全自动行为（Standard）。
-    # 向导展示需要 $wingetTools，实际执行推迟到工具清单定义之后（$pendingWizard）。
-    $interactive   = [Environment]::UserInteractive -and -not [Console]::IsInputRedirected
-    $pendingWizard = $Wizard -or ($interactive -and -not $Yes)
-    $effectiveComponents = @($standardComponents)
-}
-if ($SkipComponents) {
-    $unknownSkip = @($SkipComponents | Where-Object { $_ -notin $allComponents })
-    if ($unknownSkip) {
-        Write-Warning "SkipComponents 中的未知组件将被忽略: $($unknownSkip -join ', ')（合法值: $($allComponents -join ', ')）"
-    }
-    $effectiveComponents = @($effectiveComponents | Where-Object { $_ -notin $SkipComponents })
-    if (-not $effectiveComponents) {
-        throw "-SkipComponents（$($SkipComponents -join ', ')）剔除了全部组件，没有可安装的内容。"
-    }
-}
-$effectiveComponents = @($effectiveComponents | Select-Object -Unique)
+# 解析矩阵单源在 Scripts/Resolve-SetupComponents.ps1（可测试单元；
+# __NormalizeComponents 也定义在此，-ExcludeTools 归一化复用）
+. (Join-Path $PSScriptRoot 'Scripts\Resolve-SetupComponents.ps1')
+$componentChoice = Resolve-SetupComponents -AllComponents $allComponents `
+    -StandardComponents $standardComponents -Minimal:$Minimal -Full:$Full `
+    -Components $Components -SkipComponents $SkipComponents -Yes:$Yes -Wizard:$Wizard
+$effectiveComponents = $componentChoice.Components
+$pendingWizard = $componentChoice.PendingWizard
 
 $repoDir = [System.IO.Path]::GetFullPath($PSScriptRoot).TrimEnd('\')
 $profileDir = [System.IO.Path]::GetFullPath((Split-Path $PROFILE)).TrimEnd('\')
@@ -173,6 +131,10 @@ if ($ExcludeTools) {
 . (Join-Path $repoDir 'Scripts\LinkRegistry.ps1')
 $__RegistryPath = Join-Path $env:LOCALAPPDATA 'pwsh-profile\linked-targets.json'
 
+# winget 探测/安装单源在 Scripts/ToolInstall.ps1（bootstrap 是仓库克隆前执行的
+# 单文件引导脚本，自包含不复用本片段）
+. (Join-Path $repoDir 'Scripts\ToolInstall.ps1')
+
 function Install-DepTools {
     $winget = Get-Command winget -ErrorAction SilentlyContinue
     if (-not $winget) {
@@ -183,22 +145,12 @@ function Install-DepTools {
     foreach ($tool in @($wingetTools | Where-Object {
                 $effectiveComponents -contains $_.Component -and $_.Name -notin $ExcludeTools
             })) {
-        # 幂等：已安装则跳过（winget list 无匹配时输出为空）
-        $installed = winget list --id $tool.Id --exact --accept-source-agreements 2>$null |
-            Select-String -Pattern ([regex]::Escape($tool.Id)) -Quiet
-        if ($installed) {
+        # 幂等：已安装则跳过（探测逻辑单源在 Scripts/ToolInstall.ps1）
+        if (Test-ManagedToolInstalled -Name $tool.Name -Id $tool.Id) {
             Write-Host "已安装: $($tool.Name)" -ForegroundColor DarkGray
             continue
         }
-        Write-Host "正在安装: $($tool.Name) — $($tool.Desc)（$($tool.Id)）..." -ForegroundColor Cyan
-        $output = winget install --id $tool.Id -e --silent --accept-package-agreements --accept-source-agreements 2>&1 | Out-String
-        if ($LASTEXITCODE -ne 0) {
-            # 打印详细输出，便于定位失败原因（如源/网络问题）
-            # -band 0xFFFFFFFF 把负 exit code 转成无符号十六进制（[uint32] 不接受负数）
-            $code = '0x{0:X8}' -f ($LASTEXITCODE -band 0xFFFFFFFF)
-            Write-Warning "安装失败: $($tool.Name)（exit $code）"
-            $output.Trim() -split "`n" | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkGray }
-        }
+        $null = Install-ManagedTool -Name $tool.Name -Id $tool.Id -Desc $tool.Desc
     }
 }
 
