@@ -13,7 +13,8 @@ if ($global:__Tools.ContainsKey('fnm') -and -not $env:PROFILE_NO_FNM) {
     $script:__fnmReady = $false
     # 占位函数：首次调用触发初始化。不能用 zoxide 那种「init 重定义自身」模式——
     # fnm env 只设环境变量不重定义命令，须显式按 Application 解析避开占位函数自身。
-    function __Ensure-Fnm ([string]$Cmd) {
+    function __Ensure-Fnm {
+        param([string]$Cmd)
         if (-not $script:__fnmReady) {
             $script:__fnmReady = $true
             Remove-Item "$env:TEMP\fnm-init-cache.ps1" -ErrorAction SilentlyContinue

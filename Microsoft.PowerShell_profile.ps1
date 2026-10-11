@@ -34,7 +34,10 @@ if ($_gitMeta) {
 else {
     $_pl = Get-Item (Join-Path $PSScriptRoot 'profile') -Force -ErrorAction SilentlyContinue
     if ($_pl -and $_pl.LinkType -in 'Junction', 'SymbolicLink' -and $_pl.Target) {
-        $_repoDir = Split-Path ([System.IO.Path]::GetFullPath($_pl.Target).TrimEnd('\'))
+        # PS7 的 .Target 是 String[]，显式取第一个——依赖隐式数组→string 转换
+        # 会按空格拼接多元素路径
+        $_tgt = [string](@($_pl.Target) | Select-Object -First 1)
+        $_repoDir = Split-Path ([System.IO.Path]::GetFullPath($_tgt).TrimEnd('\'))
     }
     if (-not $_repoDir) {
         $_reg = Join-Path $env:LOCALAPPDATA 'pwsh-profile\linked-targets.json'

@@ -5,7 +5,10 @@ function ..   { Set-Location .. }
 function ...  { Set-Location ../.. }
 function .... { Set-Location ../../.. }
 # 注：PowerShell 原生支持 `cd ~`，故不再定义 ~ 函数（函数名 ~ 永远不会被解析）
-function mkcd ($dir) { New-Item -ItemType Directory -Path $dir -Force | Out-Null; Set-Location $dir }
+function mkcd {
+    param([string]$Dir)
+    New-Item -ItemType Directory -Path $Dir -Force | Out-Null; Set-Location $Dir
+}
 
 # yazi 文件管理器：退出时 cd 到最后浏览的目录（官方 PowerShell 集成写法）
 if ($global:__Tools.ContainsKey('yazi')) {
@@ -61,7 +64,8 @@ if ($global:__Tools.ContainsKey('eza')) {
 # 调 $env:EDITOR。它可能含参数（"nvim --clean"）甚至带引号的空格路径
 # （'"C:\Program Files\...\nvim.exe" --clean'），约定：带空格的路径必须加双引号。
 # 返回 $false 表示未设置 EDITOR；启动失败/异常退出码给出警告。
-function __Invoke-Editor ([string]$Path) {
+function __Invoke-Editor {
+    param([string]$Path)
     if (-not $env:EDITOR) { return $false }
     $s = $env:EDITOR.Trim()
     $cmd = $null; $rest = ''
@@ -88,17 +92,23 @@ function __Invoke-Editor ([string]$Path) {
         }
     }
     catch {
-        Write-Warning "编辑器启动失败: $cmd（请检查 `$env:EDITOR = \`"$env:EDITOR\`"）"
+        Write-Warning ('编辑器启动失败: ' + $cmd + '（请检查 $env:EDITOR = "' + $env:EDITOR + '"）')
     }
     return $true
 }
 
-# 使用未批准动词会触发警告，故采用普通命名 + 别名；code 缺失时回退 $EDITOR
-function profile-edit {
-    if (Get-Command code -ErrorAction SilentlyContinue) { code $PROFILE }
-    elseif (-not (__Invoke-Editor $PROFILE)) {
+# 内部：code 与 $EDITOR 的兜底链（profile-edit 与 codehere 共用）
+function __Open-WithCodeOrEditor {
+    param([string]$Target)
+    if (Get-Command code -ErrorAction SilentlyContinue) { code $Target }
+    elseif (-not (__Invoke-Editor $Target)) {
         Write-Host '未找到 code 且未设置 $EDITOR' -ForegroundColor Yellow
     }
+}
+
+# 使用未批准动词会触发警告，故采用普通命名 + 别名；code 缺失时回退 $EDITOR
+function profile-edit {
+    __Open-WithCodeOrEditor $PROFILE
 }
 Set-Alias -Name ep -Value profile-edit -Force
 
@@ -144,21 +154,23 @@ function touch {
     }
 }
 
-function which ($cmd) {
-    if (-not $cmd) {
+function which {
+    param([string]$Cmd)
+    if (-not $Cmd) {
         Write-Host "用法: which <命令名称>" -ForegroundColor Yellow
         return
     }
-    $c = Get-Command $cmd -ErrorAction SilentlyContinue
+    $c = Get-Command $Cmd -ErrorAction SilentlyContinue
     if (-not $c) {
-        Write-Host "未找到命令: $cmd" -ForegroundColor Yellow
+        Write-Host "未找到命令: $Cmd" -ForegroundColor Yellow
         return
     }
     # 按命令类型分派：外部命令给路径；别名/函数的 Source 为空，
-    # 给出定义或类型标识，避免输出空白行
+    # 给出定义或类型标识，避免输出空白行。
+    # 多类型共用一个 case 必须用 scriptblock 条件——'a','b' {} 是语法错误、
+    # ('a','b') {} 实测永不匹配，两种数组 case 形式都不可用
     switch ($c.CommandType) {
-        'Application'    { $c.Source }
-        'ExternalScript' { $c.Source }
+        { $_ -in 'Application', 'ExternalScript' } { $c.Source }
         'Alias'          { "$($c.Name) -> $($c.Definition)" }
         'Function'       {
             $file = $c.ScriptBlock.File
@@ -207,11 +219,12 @@ function gbn  { git rev-parse --abbrev-ref HEAD }
 # 快速提交：add --all + commit。默认不推送（避免误推密钥/临时文件上远程），
 # 显式 -Push 才推送。注意 add --all 会包含未跟踪文件，提交前建议先 gs 看一眼。
 function gquick {
-    param([string]$msg, [switch]$Push)
-    if (-not $msg) { Write-Host "用法: gquick <commit message> [-Push]" -ForegroundColor Yellow; return }
+    [CmdletBinding()]
+    param([string]$Msg, [switch]$Push)
+    if (-not $Msg) { Write-Host "用法: gquick <commit message> [-Push]" -ForegroundColor Yellow; return }
     git add --all
     if ($LASTEXITCODE -ne 0) { return }
-    git commit -m $msg
+    git commit -m $Msg
     if ($LASTEXITCODE -ne 0) { return }
     if ($Push) {
         git push
@@ -251,8 +264,14 @@ function gclean {
 # ==============================================================
 # 网络 / 系统（避免覆盖系统命令，使用 ps- 前缀）
 # ==============================================================
-function ps-reboot    ($delay = 0) { shutdown.exe /r /t $delay }
-function ps-shutdown  ($delay = 0) { shutdown.exe /s /t $delay }
+function ps-reboot {
+    param([int]$Delay = 0)
+    shutdown.exe /r /t $Delay
+}
+function ps-shutdown {
+    param([int]$Delay = 0)
+    shutdown.exe /s /t $Delay
+}
 function ps-hibernate { shutdown.exe /h }
 function ps-suspend   { rundll32.exe powrprof.dll,SetSuspendState Sleep }
 function ps-lock      { rundll32.exe user32.dll,LockWorkStation }
@@ -291,13 +310,26 @@ function wum {
     Write-Host '模块更新完成，请新开终端生效。' -ForegroundColor Cyan
 }
 
-function Get-PortProcess ($port) {
-    $conns = Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue
-    if (-not $conns) { Write-Host "端口 $port 未被占用" -ForegroundColor Green; return }
+# 内部：端口占用查询（Get-PortProcess 与 Stop-Port 共用）。空占用时打印提示并
+# 返回 $null，由调用方决定展示形态
+function __Get-PortConnections {
+    param([Parameter(Mandatory)][int]$Port)
+    $conns = Get-NetTCPConnection -LocalPort $Port -ErrorAction SilentlyContinue
+    if (-not $conns) {
+        Write-Host "端口 $Port 未被占用" -ForegroundColor Green
+        return $null
+    }
+    return $conns
+}
+
+function Get-PortProcess {
+    param([Parameter(Mandatory)][int]$Port)
+    $conns = __Get-PortConnections -Port $Port
+    if (-not $conns) { return }
     $conns | Sort-Object OwningProcess -Unique | ForEach-Object {
         $proc = Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue
         $pname = if ($proc) { $proc.Name }
-        [PSCustomObject]@{ Port = $port; PID = $_.OwningProcess; Process = $pname }
+        [PSCustomObject]@{ Port = $Port; PID = $_.OwningProcess; Process = $pname }
     }
 }
 Set-Alias -Name portof -Value Get-PortProcess
@@ -305,9 +337,9 @@ Set-Alias -Name portof -Value Get-PortProcess
 # 高风险操作：支持 -WhatIf 预览、-Confirm 逐个确认（避免误杀服务/数据库进程）
 function Stop-Port {
     [CmdletBinding(SupportsShouldProcess)]
-    param($port)
-    $conns = Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue
-    if (-not $conns) { Write-Host "端口 $port 未被占用" -ForegroundColor Green; return }
+    param([Parameter(Mandatory)][int]$Port)
+    $conns = __Get-PortConnections -Port $Port
+    if (-not $conns) { return }
     $conns.OwningProcess | Sort-Object -Unique | ForEach-Object {
         $proc = Get-Process -Id $_ -ErrorAction SilentlyContinue
         $pname = if ($proc) { $proc.Name }
@@ -324,21 +356,25 @@ Set-Alias -Name killport -Value Stop-Port
 # ==============================================================
 # unzip -> 7z（更快，支持更多格式）
 if ($global:__Tools.ContainsKey('7z')) {
-    function unzip ($file) { 7z x $file -y -o. @args }
+    function unzip {
+        param([string]$File)
+        7z x $File -y -o. @args
+    }
 } else {
-    function unzip ($file) { Expand-Archive -Path $file -DestinationPath . -Force }
+    function unzip {
+        param([string]$File)
+        Expand-Archive -Path $File -DestinationPath . -Force
+    }
 }
 function codehere {
-    if (Get-Command code -ErrorAction SilentlyContinue) { code . }
-    elseif (-not (__Invoke-Editor .)) {
-        Write-Host '未找到 code 且未设置 $EDITOR' -ForegroundColor Yellow
-    }
+    __Open-WithCodeOrEditor .
 }
 Set-Alias -Name ch -Value codehere
 
 # 哈希校验: hashcheck <文件> [<期望哈希>] [-Algorithm md5|sha1|sha256|sha384|sha512]
 # 期望哈希按长度自动识别算法(32=MD5 40=SHA1 64=SHA256 96=SHA384 128=SHA512)，省略期望值则计算并复制到剪贴板
 function hashcheck {
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)][string]$Path,
         [string]$Expected,
@@ -384,6 +420,7 @@ function hashcheck {
 # 哈希清单: hashadd <文件...> [-Algorithm md5|sha1|sha256|sha384|sha512]
 # 为每个文件生成旁挂校验文件（GNU 格式「哈希  文件名」，默认 SHA256），支持通配符
 function hashadd {
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)][string[]]$Path,
         [ValidateSet('MD5', 'SHA1', 'SHA256', 'SHA384', 'SHA512')][string]$Algorithm = 'SHA256'

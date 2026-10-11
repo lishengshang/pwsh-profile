@@ -10,8 +10,7 @@ if ($global:__Tools.ContainsKey('zoxide')) {
     function __Ensure-Zoxide {
         if ($script:__zoxideReady) { return }
         $script:__zoxideReady = $true
-        $null = Initialize-CachedInit -Command 'zoxide' -CacheFile $script:__zoxideCache -Arguments @('init','powershell')
-        if (Test-Path $script:__zoxideCache) { . $script:__zoxideCache }
+        Use-CachedInit -Command 'zoxide' -CacheFile $script:__zoxideCache -Arguments @('init','powershell')
     }
     # 占位函数：首次调用触发加载。zoxide init 成功时会注册全局别名 z/zi
     # （别名优先级高于函数），此后 z 不再进到这里；若此时仍解析不到别名，

@@ -16,7 +16,10 @@ function prompt {
     if (Test-Path $global:__starshipCache) {
         . $global:__starshipCache
     } elseif ($global:__Tools.ContainsKey('starship')) {
-        Invoke-Expression (& starship init powershell --print-full-init | Out-String)
+        # 缓存首次生成失败且无旧缓存的兜底，同样走 init（starship init 输出必须
+        # eval，官方安装方式——iex 为必要用法）；用完整路径调用，与 init-cache.ps1
+        # 的 PATH 无关性约定一致
+        Invoke-Expression (& $global:__Tools['starship'].Source init powershell --print-full-init | Out-String)
     }
     # 兜底：上面两条路都没定义新 prompt 时重建一个默认值，否则调用 prompt 会
     # CommandNotFoundException。必须 global: 限定——函数体内的普通 function

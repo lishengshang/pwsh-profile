@@ -16,7 +16,11 @@ function __NormalizeComponents ([string[]]$List) {
 }
 
 function Resolve-SetupComponents {
+    # 复数名词是函数语义本身（解析一组组件的完整选择矩阵），非命名疏忽
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '',
+        Justification = '解析多个组件的选择，复数语义正确')]
     [CmdletBinding(PositionalBinding = $false)]
+    [OutputType([hashtable])]
     param(
         [Parameter(Mandatory)][string[]]$AllComponents,
         [Parameter(Mandatory)][string[]]$StandardComponents,

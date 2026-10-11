@@ -8,6 +8,8 @@
 # 用法（profile 加载时同步调用）：
 #   Initialize-CachedInit -Command starship -CacheFile $path -Arguments @('init','powershell')
 #   返回 $true 表示缓存文件可用，调用方再决定 dot-source 时机。
+#   Use-CachedInit 为其组合形式：生成成功即 dot-source（zoxide 场景——init 输出
+#   全是 global: 函数 + 别名，可安全在任意时机加载；prompt 需要控制加载时机，用两步形式）。
 # ==============================================================
 
 function Initialize-CachedInit {
@@ -33,10 +35,9 @@ function Initialize-CachedInit {
     }
 
     try {
-        # 用完整路径调用（而非裸命令名），避免 PATH 变化导致解析失败
-        $cmdPath = $tool.Source
-        if (-not $cmdPath) { $cmdPath = $tool.Name }
-        $out = & $cmdPath @Arguments 2>$null | Out-String
+        # 用完整路径调用（而非裸命令名），避免 PATH 变化导致解析失败；
+        # Source 由入口探测构造，恒非空
+        $out = & $tool.Source @Arguments 2>$null | Out-String
         if ($LASTEXITCODE -eq 0 -and $out.Trim()) {
             $tmp = "$CacheFile.tmp"
             Set-Content -Path $tmp -Value $out -Encoding UTF8
@@ -48,4 +49,14 @@ function Initialize-CachedInit {
         Write-Host "[$Command] 缓存生成失败: $_" -ForegroundColor Yellow
     }
     return (Test-Path $CacheFile)  # 生成失败时回退到旧缓存
+}
+
+function Use-CachedInit {
+    param(
+        [Parameter(Mandatory)][string]$Command,
+        [Parameter(Mandatory)][string]$CacheFile,
+        [string[]]$Arguments
+    )
+    $null = Initialize-CachedInit @PSBoundParameters
+    if (Test-Path $CacheFile) { . $CacheFile }
 }

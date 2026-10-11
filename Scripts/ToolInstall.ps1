@@ -21,6 +21,7 @@ function Test-ManagedToolInstalled {
 
 function Install-ManagedTool {
     [CmdletBinding()]
+    [OutputType([bool])]
     param(
         [Parameter(Mandatory)][string]$Name,
         [Parameter(Mandatory)][string]$Id,

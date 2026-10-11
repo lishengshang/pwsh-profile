@@ -136,6 +136,10 @@ $__RegistryPath = Join-Path $env:LOCALAPPDATA 'pwsh-profile\linked-targets.json'
 . (Join-Path $repoDir 'Scripts\ToolInstall.ps1')
 
 function Install-DepTools {
+    # 复数名词是函数语义本身（循环安装一组工具），非命名疏忽
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '',
+        Justification = '循环安装多个工具，复数语义正确')]
+    param()
     $winget = Get-Command winget -ErrorAction SilentlyContinue
     if (-not $winget) {
         Write-Warning '未找到 winget（需要 Windows 10 1809+ 的 App Installer），跳过工具安装。'
@@ -201,6 +205,10 @@ function Install-YaziFlavor {
 }
 
 function Install-PwshModules {
+    # 复数名词是函数语义本身（循环安装一组模块），非命名疏忽
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '',
+        Justification = '循环安装多个模块，复数语义正确')]
+    param()
     # 5.1 默认 TLS 协议连不上 PSGallery，强制 TLS 1.2（PS7 默认已含，无副作用）
     [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
     # NuGet provider 缺失时自动装（否则 Install-Module 会交互式询问）
