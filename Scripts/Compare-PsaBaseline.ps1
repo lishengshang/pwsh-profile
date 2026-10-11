@@ -71,7 +71,11 @@ foreach ($rel in $changed) {
     $base = @{}
     # ls-tree 命中时输出路径（真值），未命中时无输出——cat-file -e 成功时无输出，用输出做条件恒为假
     if (git ls-tree --name-only "$BaseSha" -- "$rel") {
-        git show "$($BaseSha):$rel" | Out-File -FilePath $tmp -Encoding utf8
+        # git show 输出若经 PowerShell 管道会按控制台编码（中文系统为 GBK）解码，
+        # 中文注释乱码使基线版解析随机失败、计数为 0，产生「新增违规」假阳性——
+        # 用 Start-Process 把字节流直写文件，绕过管道编码
+        $null = Start-Process -FilePath 'git' -ArgumentList @('show', "$($BaseSha):$rel") `
+            -RedirectStandardOutput $tmp -NoNewWindow -Wait -PassThru
         $base = Get-ViolationCountByRule -Path $tmp
     }
     Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
