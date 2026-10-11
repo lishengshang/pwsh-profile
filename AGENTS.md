@@ -21,8 +21,9 @@ starship.toml / lazygit/ / yazi/   外部配置，SkipIfExists 链接到各自�
 nvim/                              LazyVim 配置（链接到 $env:LOCALAPPDATA\nvim）
 Scripts/                           Get-ManagedLinks（链接清单唯一事实来源）· LinkRegistry（注册表读写/自愈/锁）
                                    Deploy-ConfigLinks（部署循环，供 Pester 测试）· Repair-ConfigLinks（断链修复）
-                                   Invoke-SetupWizard（向导）· Compare-PsaBaseline · Check-CommitMsg · wallpaper
-tests/                             Pester 套件       .github/workflows/ci.yml  CI（解析/幂等/冒烟/Pester/PSA/规范）
+                                   Invoke-SetupWizard（向导）· Compare-PsaBaseline · Check-DocsDrift（文档防漂移）
+                                   Check-CommitMsg · wallpaper
+tests/                             Pester 套件       .github/workflows/ci.yml  CI（解析/幂等/冒烟/Pester/文档漂移/PSA/规范）
 docs/                              usage 速查 · reference 参考 · faq      TODO.md  长期维护事项
 ```
 
@@ -105,6 +106,7 @@ Mason LSP、treesitter 产物在各设备 `$env:LOCALAPPDATA\nvim-data` 自动�
   pwsh -NoProfile -Command ". $PROFILE; <冒烟验证本次改动引入的函数/别名>"
   pwsh -NoProfile -File setup.ps1 -SkipTools        # 语法与链接逻辑不报错
   pwsh -NoProfile -Command "Invoke-Pester tests"     # 改了 Scripts/ 链接链路必跑
+  pwsh -NoProfile -File Scripts\Check-DocsDrift.ps1  # 改了命令/工具清单时必跑（CI 同款门禁）
   pwsh -NoProfile -File Scripts\Check-CommitMsg.ps1 -Range origin/main..HEAD  # 提交信息 + 引用真实性
   ```
   最后一项在本地与 CI 都跑；PSA 违规门禁见 `Scripts/Compare-PsaBaseline.ps1`
