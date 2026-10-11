@@ -4,8 +4,9 @@
 #   2. profile 冒烟（入口 dot-source + 命令类型断言——依赖优雅降级，CI 裸环境可跑）
 #   3. setup.ps1 幂等性（-SkipTools -Yes 连跑两次，第二次应全部跳过）
 #   4. Pester 测试套件（tests/，仅 pwsh 矩阵作业运行）
-#   5. PSScriptAnalyzer 新增违规门禁（基线提交快照比对，仅 pwsh 矩阵作业运行）
-#   6. 规范校验作业（提交信息格式 + 注释交叉引用真实性，见 conventions 作业）
+#   5. 文档防漂移校验（代码 ⊆ 文档单向覆盖，仅 pwsh 矩阵作业运行）
+#   6. PSScriptAnalyzer 新增违规门禁（基线提交快照比对，仅 pwsh 矩阵作业运行）
+#   7. 规范校验作业（提交信息格式 + 注释交叉引用真实性，见 conventions 作业）
 name: CI
 
 on:
@@ -180,7 +181,18 @@ jobs:
           if ($result.FailedCount -gt 0) {
               throw "Pester failed: $($result.FailedCount) test(s), $($result.PassedCount) passed"
           }
+          # 容器加载失败（Discovery/BeforeAll 崩溃）不计入 FailedCount（Pester 6
+          # 实测 total=0 全静默），按 Result 逐容器复查；Result 属性 5/6 都有
+          $badContainers = @($result.Containers | Where-Object { $_.Result -eq 'Failed' })
+          if ($badContainers.Count -gt 0) {
+              $badContainers | ForEach-Object { Write-Host "::error::$($_.Name)" }
+              throw "Pester container failure(s): $($badContainers.Count)"
+          }
           Write-Host "Pester OK: $($result.PassedCount) test(s) passed"
+
+      - name: 文档防漂移校验（代码 ⊆ 文档单向覆盖）
+        if: matrix.shell == 'pwsh'
+        run: .\Scripts\Check-DocsDrift.ps1
 
       - name: PSScriptAnalyzer 新增违规门禁（与基线提交比对）
         if: matrix.shell == 'pwsh'

@@ -18,8 +18,9 @@
 
 ## 进行中：四阶段维护加固计划
 
-按阶段推进，每阶段完成后停下确认。已完成阶段 0（仓库卫生：ime.lua 验证提交合并、
-过期分支清理）。
+按阶段推进，每阶段完成后停下确认。四阶段已全部完成（阶段 0 仓库卫生、
+阶段 1 测试与 lint 加固、阶段 2 注册表健壮性、阶段 3 文档防漂移 CI），
+剩余为下方 P2 长期优化。
 
 - [x] **阶段 1：测试与 lint 加固**
   - [x] 提取 setup 链接部署循环为可测试函数（`refactor/extract-link-deploy`，
@@ -43,12 +44,15 @@
   - [x] 备份目录治理：只清理严格 `backup-<yyyyMMdd-HHmmss>` 命名目录，保留最近 3 份
         （Remove-StaleLinkBackup，部署结束后执行；大小写或格式不一致的一律不碰）
 
-- [ ] **阶段 3：文档防漂移 CI**（`ci/docs-drift-check`）
+- [x] **阶段 3：文档防漂移 CI**（`ci/docs-drift-check`）
   - [x] 注释与文档的交叉引用真实性校验（`Scripts/Check-CommitMsg.ps1 -CheckRefs`，
         CI 与本地提交前验证都跑）——文件不存在、或 `X.md「章节」` 里 X.md 无该标题
         即失败。此前有 3 处注释指向 README Hub 化时已删除的「设计说明」「依赖工具」表
-  - [ ] AST 提取 aliases.ps1 函数与 setup.ps1 winget 清单，CI 校验
-        docs/usage.md 与 docs/reference.md 覆盖（代码 ⊆ 文档单向）
+  - [x] AST 提取 aliases.ps1 函数与 setup.ps1 winget 清单，CI 校验
+        docs/usage.md 与 docs/reference.md 覆盖（代码 ⊆ 文档单向；
+        `Scripts/Check-DocsDrift.ps1`）。被 Set-Alias 映射的函数由别名代表接受
+        检查（用户可见名是别名），`__` 前缀私有函数不参与；README「快速上手」
+        中出现的 profile 命令纳入 usage.md 子集校验
 
 ## P2：长期优化
 
