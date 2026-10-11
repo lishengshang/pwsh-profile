@@ -75,7 +75,7 @@
 ```
 Microsoft.PowerShell_profile.ps1   入口（重建 PATH → 探测工具 → 加载 profile/*.ps1）
 profile/                           模块化配置（env / prompt / psreadline / modules / aliases / startup）
-Scripts/                           安装向导、链接注册表与修复、wallpaper、规范校验
+Scripts/                           安装向导、组件解析、链接注册表与修复、wallpaper、规范校验
 tests/                             Pester 套件
 starship.toml / lazygit/ / yazi/ / nvim/   外部配置（SkipIfExists 链接，你的存量配置优先）
 docs/ windows-terminal/            文档与终端配色

@@ -21,9 +21,11 @@ starship.toml / lazygit/ / yazi/   外部配置，SkipIfExists 链接到各自�
 nvim/                              LazyVim 配置（链接到 $env:LOCALAPPDATA\nvim）
 Scripts/                           Get-ManagedLinks（链接清单唯一事实来源）· LinkRegistry（注册表读写/自愈/锁）
                                    Deploy-ConfigLinks（部署循环，供 Pester 测试）· Repair-ConfigLinks（断链修复）
+                                   Resolve-SetupComponents（setup 组件解析，供 Pester 测试）· ToolInstall（winget 探测/安装）
                                    Invoke-SetupWizard（向导）· Compare-PsaBaseline · Check-DocsDrift（文档防漂移）
                                    Check-CommitMsg · wallpaper
-tests/                             Pester 套件       .github/workflows/ci.yml  CI（解析/幂等/冒烟/Pester/文档漂移/PSA/规范）
+tests/                             Pester 套件（共享夹具 TestHelper.ps1）
+                                   .github/workflows/ci.yml  CI（解析/幂等/冒烟/Pester/文档漂移/PSA/规范）
 docs/                              usage 速查 · reference 参考 · faq      TODO.md  长期维护事项
 ```
 
