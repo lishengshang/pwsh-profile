@@ -91,12 +91,13 @@ function Invoke-ConfigLinkDeployment {
             # 链接目标路径是否存在（5.1 的 .Target 是 String[]，取第一个）。
             $isBrokenLink = $false
             if ($existing.LinkType) {
-                $linkTarget = @($existing.Target) | Select-Object -First 1
-                $isBrokenLink = $linkTarget -and -not (Test-Path -LiteralPath ([string]$linkTarget))
+                $linkTarget = __Get-PrimaryLinkTarget $existing
+                $isBrokenLink = $linkTarget -and -not (Test-Path -LiteralPath $linkTarget)
             }
             if ($isBrokenLink) {
-                # 断链对象不含用户可读数据，直接清理后重建
-                Remove-Item -LiteralPath $item.Target -Force
+                # 断链对象不含用户可读数据，直接清理后重建（显式 Stop：与
+                # Repair 的逐条隔离纪律一致，失败落在部署循环的调用方 catch）
+                Remove-Item -LiteralPath $item.Target -Force -ErrorAction Stop
                 Write-Host "已清理失效链接: $($item.Target)" -ForegroundColor DarkGray
             }
             else {

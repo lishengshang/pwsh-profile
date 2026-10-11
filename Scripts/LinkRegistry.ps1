@@ -4,7 +4,23 @@
 # 三元组。写入原子（tmp + Move）；读改写经命名 Mutex 串行，setup 与 Repair 并发
 # 登记不再互相覆盖；JSON 损坏时 Restore-LinkRegistry 备份 .corrupt-<时间戳> 后
 # 按清单与磁盘状态重建。
+# 下方 __ 前缀函数中，__Test-IsHardLinkOf 与两个路径 helper 也被
+# Repair-ConfigLinks.ps1 / Deploy-ConfigLinks.ps1 跨文件调用（片段无独立作用域）。
 # ==============================================================
+
+# 内部：路径规范化（GetFullPath + 去尾分隔符）。链接两侧比对统一走这里，
+# 保证「去尾反斜杠」规则单点维护。
+function __Get-NormalizedFullPath {
+    param([Parameter(Mandatory)][string]$Path)
+    return [System.IO.Path]::GetFullPath($Path).TrimEnd('\')
+}
+
+# 内部：取链接对象的第一个目标路径。Windows PowerShell 5.1 的 .Target 返回
+# String[]，直接当字符串用会依赖隐式数组拼接，统一在此取第一个并转 string。
+function __Get-PrimaryLinkTarget {
+    param([Parameter(Mandatory)][AllowNull()]$Item)
+    return [string](@($Item.Target) | Select-Object -First 1)
+}
 
 # 内部：注册表 JSON 文本 → 条目数组。解析失败抛异常（调用方决定视为空还是自愈）。
 # 5.1 读顶层 JSON 数组会把属性合并成数组而非对象数组，需显式展开。
@@ -46,7 +62,7 @@ function __Invoke-WithLinkRegistryLock {
     $mtx = $null
     $locked = $false
     try {
-        try { $mtx = New-Object System.Threading.Mutex($false, 'Global\pwsh-profile-linkregistry') }
+        try { $mtx = [System.Threading.Mutex]::new($false, 'Global\pwsh-profile-linkregistry') }
         catch {
             $mtx = $null
             Write-Warning "链接注册表锁创建失败（不加锁继续）: $($_.Exception.Message)"
@@ -77,7 +93,7 @@ function __Test-IsHardLinkOf {
         [Parameter(Mandatory)][string]$Src,
         [Parameter(Mandatory)][string]$Target
     )
-    $srcFull = [System.IO.Path]::GetFullPath($Src).TrimEnd('\')
+    $srcFull = __Get-NormalizedFullPath $Src
     $srcNorm = ($srcFull -replace '^[A-Za-z]:', '').ToLowerInvariant()
     $links = @()
     try {
@@ -100,11 +116,10 @@ function __Get-ManagedLinkTypeFromDisk {
     )
     $item = Get-Item -LiteralPath $Target -Force -ErrorAction SilentlyContinue
     if (-not $item) { return $null }
-    $srcFull = [System.IO.Path]::GetFullPath($Src).TrimEnd('\')
+    $srcFull = __Get-NormalizedFullPath $Src
     if ($item.LinkType -in 'SymbolicLink', 'Junction') {
-        # Windows PowerShell 5.1 返回 String[]，取第一个目标再传给 GetFullPath。
-        $tgtTarget = @($item.Target) | Select-Object -First 1
-        if ($tgtTarget -and ([System.IO.Path]::GetFullPath([string]$tgtTarget).TrimEnd('\') -ieq $srcFull)) {
+        $tgtTarget = __Get-PrimaryLinkTarget $item
+        if ($tgtTarget -and (__Get-NormalizedFullPath $tgtTarget) -ieq $srcFull) {
             return $item.LinkType
         }
         return $null
@@ -198,27 +213,32 @@ function Set-LinkRegistryEntry {
 
 # 判定目标是否已由本仓库管理（幂等跳过的依据），返回 @{ IsManaged; LinkType }：
 # 先认磁盘证据，再退到登记过的副本。
-function Get-ManagedLinkState ([string]$src, [string]$target, [string]$RegistryPath) {
+function Get-ManagedLinkState {
+    param(
+        [Parameter(Mandatory)][string]$Src,
+        [Parameter(Mandatory)][string]$Target,
+        [Parameter(Mandatory)][string]$RegistryPath
+    )
     # 磁盘证据优先，判定单源在 __Get-ManagedLinkTypeFromDisk（符号链接指向仓库源、
     # fsutil 同 inode）
-    $diskType = __Get-ManagedLinkTypeFromDisk -Src $src -Target $target
+    $diskType = __Get-ManagedLinkTypeFromDisk -Src $Src -Target $Target
     if ($diskType) { return @{ IsManaged = $true; LinkType = $diskType } }
-    $tgt = Get-Item -LiteralPath $target -Force -ErrorAction SilentlyContinue
+    $tgt = Get-Item -LiteralPath $Target -Force -ErrorAction SilentlyContinue
     if (-not $tgt) { return @{ IsManaged = $false; LinkType = $null } }
     # 有链接属性却不指向仓库源 = 用户自己的链接，绝不按登记信息接管
     if ($tgt.LinkType -in 'SymbolicLink', 'Junction') { return @{ IsManaged = $false; LinkType = $null } }
-    $srcFull = [System.IO.Path]::GetFullPath($src).TrimEnd('\')
+    $srcFull = __Get-NormalizedFullPath $Src
     $entry = @(Get-LinkRegistryEntries $RegistryPath) |
-        Where-Object { $_.Target -ieq $target } | Select-Object -First 1
+        Where-Object { $_.Target -ieq $Target } | Select-Object -First 1
     # 无链接关系时只认登记过的副本：目录 CopyDirectory；文件 Copy 还要求内容一致
     # （哈希相同 ≠ 受管理，必须登记过才算，否则会误跳过建链）
-    if ($entry -and (([System.IO.Path]::GetFullPath($entry.Source).TrimEnd('\')) -ieq $srcFull)) {
+    if ($entry -and (__Get-NormalizedFullPath $entry.Source) -ieq $srcFull) {
         if ($tgt.PSIsContainer) {
             if ($entry.LinkType -eq 'CopyDirectory') { return @{ IsManaged = $true; LinkType = 'CopyDirectory' } }
         }
         elseif ($entry.LinkType -eq 'Copy') {
-            if ((Get-FileHash $src -ErrorAction SilentlyContinue).Hash -eq
-                (Get-FileHash $target -ErrorAction SilentlyContinue).Hash) {
+            if ((Get-FileHash $Src -ErrorAction SilentlyContinue).Hash -eq
+                (Get-FileHash $Target -ErrorAction SilentlyContinue).Hash) {
                 return @{ IsManaged = $true; LinkType = 'Copy' }
             }
         }

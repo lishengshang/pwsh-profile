@@ -1,15 +1,13 @@
-﻿<#
-.SYNOPSIS
-    setup.ps1 的交互式安装向导：简介 → 组件勾选 → 工具预览/剔除 → 确认。
-.DESCRIPTION
-    仅在 setup.ps1 无显式组件参数且处于交互终端时被调用（-Wizard 可强制）。
-    工具清单、合法组件与随组件模块的唯一事实来源都是 setup.ps1
-    （$wingetTools / $allComponents / $componentModules），本文件只负责展示与交互。
-    输入兜底：Read-Host 在 stdin 被重定向/EOF 时返回空串——所有提示均把空输入
-    视为「接受当前默认继续」，保证意外调用（CI/管道）不会卡死或崩溃。
-#>
-#Requires -Version 5.1
-# 位置须在帮助块之后——放在首位会让 Get-Help / -? 读不到下面的帮助注释块
+﻿#Requires -Version 5.1
+# ==============================================================
+# setup.ps1 交互式安装向导（被 setup.ps1 dot-source，不独立执行）
+# 简介 → 组件勾选 → 工具预览/剔除 → 确认。仅在无显式组件参数且处于
+# 交互终端时被调用（-Wizard 可强制）。
+# 工具清单、合法组件与随组件模块的唯一事实来源都是 setup.ps1
+# （$wingetTools / $allComponents / $componentModules），本文件只负责展示与交互。
+# 输入兜底：Read-Host 在 stdin 被重定向/EOF 时返回空串——所有提示均把空输入
+# 视为「接受当前默认继续」，保证意外调用（CI/管道）不会卡死或崩溃。
+# ==============================================================
 
 # 组件展示元数据（菜单顺序 = 编号顺序）。Key 必须与 setup.ps1 的 $allComponents 一致。
 $script:WizardComponents = @(
@@ -25,6 +23,31 @@ function __WizardParseAnswer ([string]$Answer) {
     @($Answer -split '[,\s]+' |
         ForEach-Object { $_.Trim().ToLowerInvariant() } |
         Where-Object { $_ })
+}
+
+# 内部：把「编号或名字」token 解析成候选成员并切换勾选。$Indexed 是编号对应的
+# 候选清单（编号 = 位置 +1，与展示一致）；$NameProperty 为空表示元素本身就是
+# 名字字符串。无法识别的 token 打警告跳过，不阻断其余 token。
+function __Toggle-ToggleToken {
+    param(
+        [Parameter(Mandatory)][string]$Token,
+        [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Indexed,
+        [string]$NameProperty,
+        [Parameter(Mandatory)][System.Collections.Generic.List[string]]$Toggles,
+        [Parameter(Mandatory)][string]$UnknownWarning
+    )
+    $names = if ($NameProperty) { @($Indexed | ForEach-Object { $_.$NameProperty }) } else { @($Indexed) }
+    $idx = 0
+    $name = $null
+    if ([int]::TryParse($Token, [ref]$idx) -and $idx -ge 1 -and $idx -le $names.Count) {
+        $name = $names[$idx - 1]
+    }
+    elseif ($Token -in $names) { $name = $Token }
+    else {
+        Write-Warning "${UnknownWarning}: $Token"
+        return
+    }
+    if ($Toggles.Contains($name)) { $Toggles.Remove($name) } else { $null = $Toggles.Add($name) }
 }
 
 function Show-WizardIntro {
@@ -68,17 +91,7 @@ function Invoke-ComponentMenu {
             continue
         }
         foreach ($t in $tokens) {
-            $idx = 0
-            $key = $null
-            if ([int]::TryParse($t, [ref]$idx) -and $idx -ge 1 -and $idx -le $keys.Count) {
-                $key = $keys[$idx - 1]
-            }
-            elseif ($t -in $keys) { $key = $t }
-            else {
-                Write-Warning "忽略无法识别的输入: $t"
-                continue
-            }
-            if ($list.Contains($key)) { $list.Remove($key) } else { $list.Add($key) }
+            __Toggle-ToggleToken -Token $t -Indexed $keys -Toggles $list -UnknownWarning '忽略无法识别的输入'
         }
     }
 }
@@ -91,6 +104,7 @@ function Invoke-InstallPreview {
         [string[]]$Components,
         [object[]]$Tools,
         [System.Collections.IDictionary]$ComponentModules,
+        [object[]]$ManagedLinks,
         [System.Collections.Generic.List[string]]$Excluded
     )
 
@@ -128,7 +142,7 @@ function Invoke-InstallPreview {
             Write-Host '  随组件安装的 PowerShell 模块:' -ForegroundColor Yellow
             foreach ($m in $mods) { Write-Host "    · $m" }
         }
-        $links = @($script:WizardLinks | Where-Object { $Components -contains $_.Component })
+        $links = @($ManagedLinks | Where-Object { $Components -contains $_.Component })
         if ($links) {
             Write-Host ''
             Write-Host '  外部配置链接（你已有的配置优先，不会被覆盖）:' -ForegroundColor Yellow
@@ -148,17 +162,7 @@ function Invoke-InstallPreview {
         if ($tokens -contains 'b') { return 'back' }
         if (-not $tokens)          { return 'confirm' }
         foreach ($t in $tokens) {
-            $idx = 0
-            $name = $null
-            if ([int]::TryParse($t, [ref]$idx) -and $idx -ge 1 -and $idx -le $flat.Count) {
-                $name = $flat[$idx - 1].Name
-            }
-            elseif ($t -in @($flat | ForEach-Object Name)) { $name = $t }
-            else {
-                Write-Warning "忽略无法识别的编号: $t"
-                continue
-            }
-            if ($Excluded.Contains($name)) { $Excluded.Remove($name) } else { $null = $Excluded.Add($name) }
+            __Toggle-ToggleToken -Token $t -Indexed @($flat) -NameProperty 'Name' -Toggles $Excluded -UnknownWarning '忽略无法识别的编号'
         }
     }
 }
@@ -173,8 +177,9 @@ function Invoke-SetupWizard {
 
     Show-WizardIntro
 
-    # 外部配置清单（展示用；事实来源 Get-ManagedLinks.ps1）
-    $script:WizardLinks = @(. (Join-Path $PSScriptRoot 'Get-ManagedLinks.ps1') |
+    # 外部配置清单（展示用；事实来源 Get-ManagedLinks.ps1）。
+    # 仅在本函数内产生并向预览函数传递参数，不用 script 级变量（数据流单一路径）
+    $managedLinks = @(. (Join-Path $PSScriptRoot 'Get-ManagedLinks.ps1') |
         Where-Object { -not $_.Core })
 
     $selected = @($DefaultComponents)
@@ -192,7 +197,7 @@ function Invoke-SetupWizard {
         }
 
         while ($true) {
-            $r = Invoke-InstallPreview -Components $selected -Tools $Tools -Excluded $excluded -ComponentModules $ComponentModules
+            $r = Invoke-InstallPreview -Components $selected -Tools $Tools -Excluded $excluded -ComponentModules $ComponentModules -ManagedLinks $managedLinks
             if ($null -eq $r)     { return $null }
             if ($r -eq 'confirm') { return @{ Components = @($selected); ExcludeTools = @($excluded) } }
             if ($r -eq 'back')    { break }   # 返回组件选择，保留已勾选状态

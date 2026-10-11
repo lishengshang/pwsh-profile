@@ -84,7 +84,7 @@ $rawPath = Join-Path $saveDir $rawFilename
 Send-Notify -Title 'Wallpaper' -Body 'Downloading from Alcy...'
 
 Add-Type -AssemblyName System.Net.Http
-$http = New-Object System.Net.Http.HttpClient
+$http = [System.Net.Http.HttpClient]::new()
 $http.Timeout = [TimeSpan]::FromSeconds(60)
 # UA 必须是完整浏览器串：部分壁纸 API 对默认 PowerShell UA 直接返回错误页
 $null = $http.DefaultRequestHeaders.TryAddWithoutValidation('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
@@ -120,7 +120,7 @@ if ($fileInfo.Length -lt 20480) {
 Add-Type -AssemblyName PresentationCore
 
 try {
-    $bi = New-Object System.Windows.Media.Imaging.BitmapImage
+    $bi = [System.Windows.Media.Imaging.BitmapImage]::new()
     $bi.BeginInit()
     $bi.CacheOption = [System.Windows.Media.Imaging.BitmapCacheOption]::OnLoad
     $bi.UriSource = [Uri]('file:///' + $rawPath.Replace('\', '/'))

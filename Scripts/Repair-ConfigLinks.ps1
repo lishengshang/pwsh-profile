@@ -21,8 +21,118 @@ param(
 
 $repoDir = Split-Path $PSScriptRoot
 
-# 注册表读写单源在 LinkRegistry.ps1（原子写）
+# 注册表读写单源在 LinkRegistry.ps1（原子写；路径规范化的两个 helper 也在此）
 . (Join-Path $PSScriptRoot 'LinkRegistry.ps1')
+
+# 内部：删除与预期不符的目标。Get-Item -Force 能拿到断链对象（Test-Path 不可靠），
+# 有链接属性按链接点 Force 删；普通目录必须 Recurse；普通文件 Force。
+function __Remove-ConflictingTarget {
+    param(
+        [Parameter(Mandatory)][string]$Target,
+        [Parameter(Mandatory)]$Item
+    )
+    if ($Item.LinkType -or -not $Item.PSIsContainer) {
+        Remove-Item -LiteralPath $Target -Force -ErrorAction Stop
+    }
+    else {
+        Remove-Item -LiteralPath $Target -Recurse -Force -ErrorAction Stop
+    }
+}
+
+# 内部：刷新已登记的副本（Copy/CopyDirectory）。先清理类型不符的目标（链接、
+# 文件↔目录颠倒），目标丢失则按源类型恢复；仍在的目录用 robocopy /MIR 镜像
+# （源已删除的文件也会被清理；exit code 0-7 均为成功），文件哈希有差异才刷新
+# （psync 拉取后同步副本的通道）。
+# 注：switch 的 case 条件写数组（'Copy','CopyDirectory'）不产生「任一匹配」
+# 语义，实测永不命中——两类共用逻辑必须走函数调用，不能合进同一个 case 块。
+function __Refresh-CopyEntry {
+    param(
+        [Parameter(Mandatory)][string]$Src,
+        [Parameter(Mandatory)][string]$Target,
+        [Parameter(Mandatory)][ValidateSet('Copy', 'CopyDirectory')][string]$LinkType
+    )
+    $isDir = $LinkType -eq 'CopyDirectory'
+    $tgt = Get-Item -LiteralPath $Target -Force -ErrorAction SilentlyContinue
+    if ($tgt -and ($tgt.LinkType -or $tgt.PSIsContainer -ne $isDir)) {
+        __Remove-ConflictingTarget -Target $Target -Item $tgt
+        $tgt = $null
+    }
+    if (-not $tgt) {
+        if ($isDir) {
+            Copy-Item -Path $Src -Destination $Target -Recurse -Force -ErrorAction Stop
+            Write-Host "已恢复目录副本: $Target" -ForegroundColor Green
+        }
+        else {
+            Copy-Item -Path $Src -Destination $Target -Force -ErrorAction Stop
+            Write-Host "已恢复副本: $Target" -ForegroundColor Green
+        }
+        return
+    }
+    if ($isDir) {
+        $null = robocopy $Src $Target /MIR /NJH /NJS /NDL /NFL /NP
+        if ($LASTEXITCODE -ge 8) {
+            Write-Warning "目录镜像同步失败（robocopy exit $LASTEXITCODE）: $Target"
+        }
+    }
+    elseif ((Get-FileHash $Src -ErrorAction SilentlyContinue).Hash -ne
+        (Get-FileHash $Target -ErrorAction SilentlyContinue).Hash) {
+        Copy-Item -Path $Src -Destination $Target -Force -ErrorAction Stop
+        Write-Host "已刷新副本: $Target" -ForegroundColor Green
+    }
+}
+
+# 内部：按登记类型重建链接。SymbolicLink/Junction/HardLink 的「已是正确链接则跳过
+# → 清理错误目标 → 重建 → 失败按源类型降级 Copy 并回写注册表」结构完全一致，
+# 参数化单点维护——同一处逻辑写三遍，任何一处漏改都会造成类型间行为漂移。
+# Junction 只适用于目录、HardLink 只适用于文件，降级 Copy/CopyDirectory 由源
+# 类型天然决定，三分支得以共用同一段降级代码。
+function __Repair-LinkOfType {
+    param(
+        [Parameter(Mandatory)][ValidateSet('SymbolicLink', 'Junction', 'HardLink')][string]$ItemType,
+        [Parameter(Mandatory)][string]$Src,
+        [Parameter(Mandatory)][string]$Target,
+        [Parameter(Mandatory)][string]$Registry,
+        [Parameter(Mandatory)][bool]$SrcIsDir
+    )
+    # Junction 源不是目录是登记数据异常，跳过不碰（不计入失败）
+    if ($ItemType -eq 'Junction' -and -not $SrcIsDir) {
+        Write-Warning "Junction 源不是目录，跳过: $Src"
+        return
+    }
+    if ($ItemType -eq 'HardLink' -and (Test-Path -LiteralPath $Target) -and
+        (__Test-IsHardLinkOf -Src $Src -Target $Target)) { return }
+
+    $tgt = Get-Item -LiteralPath $Target -Force -ErrorAction SilentlyContinue
+    if ($tgt) {
+        # 已是本仓库源的同类型链接：无需重建
+        if ($ItemType -in 'SymbolicLink', 'Junction') {
+            $srcFull = __Get-NormalizedFullPath $Src
+            $tgtTarget = __Get-PrimaryLinkTarget $tgt
+            if ($tgt.LinkType -eq $ItemType -and $tgtTarget -and
+                (__Get-NormalizedFullPath $tgtTarget) -ieq $srcFull) { return }
+        }
+        __Remove-ConflictingTarget -Target $Target -Item $tgt
+    }
+    try {
+        $null = New-Item -ItemType $ItemType -Path $Target -Target $Src -ErrorAction Stop
+        $labels = @{ SymbolicLink = '符号链接'; Junction = 'Junction'; HardLink = '硬链接' }
+        Write-Host "已修复$($labels[$ItemType]): $Target" -ForegroundColor Green
+    }
+    catch {
+        # 重建失败（无权限建符号链接、跨卷建硬链接等）：按源类型降级为副本并
+        # 回写注册表，下次不再徒劳重试
+        if ($SrcIsDir) {
+            Copy-Item -Path $Src -Destination $Target -Recurse -Force -ErrorAction Stop
+            $copyType = 'CopyDirectory'
+        }
+        else {
+            Copy-Item -Path $Src -Destination $Target -Force -ErrorAction Stop
+            $copyType = 'Copy'
+        }
+        Set-LinkRegistryEntry -Path $Registry -Target $Target -Source $Src -LinkType $copyType
+        Write-Host "已降级为副本（$ItemType 不可用）: $Target" -ForegroundColor DarkYellow
+    }
+}
 
 # ---- 读取注册表（损坏时备份重建） ----
 # Restore-LinkRegistry：解析失败先备份 .corrupt-<时间戳>，再按清单与磁盘
@@ -51,139 +161,11 @@ foreach ($e in $entries) {
         }
 
         switch ($e.LinkType) {
-            'SymbolicLink' {
-                # Get-Item -Force 拿断链对象；目录符号链接也必须按原类型恢复。
-                $tgt = Get-Item -LiteralPath $e.Target -Force -ErrorAction SilentlyContinue
-                $srcFull = [System.IO.Path]::GetFullPath($src).TrimEnd('\')
-                if ($tgt) {
-                    # Windows PowerShell 5.1 返回 String[]，取第一个目标再传给 GetFullPath。
-                    $tgtTarget = @($tgt.Target) | Select-Object -First 1
-                    if ($tgt.LinkType -eq 'SymbolicLink' -and $tgtTarget -and
-                        ([System.IO.Path]::GetFullPath([string]$tgtTarget).TrimEnd('\') -ieq $srcFull)) { continue }
-                    if ($tgt.LinkType -or -not $tgt.PSIsContainer) {
-                        Remove-Item -LiteralPath $e.Target -Force -ErrorAction Stop
-                    }
-                    else {
-                        Remove-Item -LiteralPath $e.Target -Recurse -Force -ErrorAction Stop
-                    }
-                }
-                try {
-                    $null = New-Item -ItemType SymbolicLink -Path $e.Target -Target $src -ErrorAction Stop
-                    Write-Host "已修复符号链接: $($e.Target)" -ForegroundColor Green
-                }
-                catch {
-                    # 无权限建符号链接：按源类型降级，并更新注册表
-                    if ($srcIsDir) {
-                        Copy-Item -Path $src -Destination $e.Target -Recurse -Force -ErrorAction Stop
-                        $copyType = 'CopyDirectory'
-                    }
-                    else {
-                        Copy-Item -Path $src -Destination $e.Target -Force -ErrorAction Stop
-                        $copyType = 'Copy'
-                    }
-                    Set-LinkRegistryEntry -Path $Registry -Target $e.Target -Source $src -LinkType $copyType
-                    Write-Host "已降级为副本（符号链接不可用）: $($e.Target)" -ForegroundColor DarkYellow
-                }
-            }
-            'Junction' {
-                # Junction 只适用于目录；支持目标被删除、断链或指向错误目录时重建。
-                if (-not $srcIsDir) {
-                    Write-Warning "Junction 源不是目录，跳过: $src"
-                    continue
-                }
-                $tgt = Get-Item -LiteralPath $e.Target -Force -ErrorAction SilentlyContinue
-                $srcFull = [System.IO.Path]::GetFullPath($src).TrimEnd('\')
-                if ($tgt) {
-                    # Windows PowerShell 5.1 返回 String[]，取第一个目标再传给 GetFullPath。
-                    $tgtTarget = @($tgt.Target) | Select-Object -First 1
-                    if ($tgt.LinkType -eq 'Junction' -and $tgtTarget -and
-                        ([System.IO.Path]::GetFullPath([string]$tgtTarget).TrimEnd('\') -ieq $srcFull)) { continue }
-                    if ($tgt.LinkType -or -not $tgt.PSIsContainer) {
-                        Remove-Item -LiteralPath $e.Target -Force -ErrorAction Stop
-                    }
-                    else {
-                        Remove-Item -LiteralPath $e.Target -Recurse -Force -ErrorAction Stop
-                    }
-                }
-                try {
-                    $null = New-Item -ItemType Junction -Path $e.Target -Target $src -ErrorAction Stop
-                    Write-Host "已修复 Junction: $($e.Target)" -ForegroundColor Green
-                }
-                catch {
-                    # Junction 不可用时降级为目录副本，并记住新类型
-                    Copy-Item -Path $src -Destination $e.Target -Recurse -Force -ErrorAction Stop
-                    Set-LinkRegistryEntry -Path $Registry -Target $e.Target -Source $src -LinkType 'CopyDirectory'
-                    Write-Host "已降级为目录副本（Junction 不可用）: $($e.Target)" -ForegroundColor DarkYellow
-                }
-            }
-            'HardLink' {
-                # 已经是本仓库源的硬链接就无需重建
-                if (__Test-IsHardLinkOf -Src $src -Target $e.Target) { continue }
-
-                $tgt = Get-Item -LiteralPath $e.Target -Force -ErrorAction SilentlyContinue
-                if ($tgt) {
-                    if ($tgt.LinkType -or -not $tgt.PSIsContainer) {
-                        Remove-Item -LiteralPath $e.Target -Force -ErrorAction Stop
-                    }
-                    else {
-                        Remove-Item -LiteralPath $e.Target -Recurse -Force -ErrorAction Stop
-                    }
-                }
-                try {
-                    $null = New-Item -ItemType HardLink -Path $e.Target -Target $src -ErrorAction Stop
-                    Write-Host "已修复硬链接: $($e.Target)" -ForegroundColor Green
-                }
-                catch {
-                    # 跨卷等场景 HardLink 不可用：降级 Copy 并更新注册表
-                    Copy-Item -Path $src -Destination $e.Target -Force -ErrorAction Stop
-                    Set-LinkRegistryEntry -Path $Registry -Target $e.Target -Source $src -LinkType 'Copy'
-                    Write-Host "已降级为副本（硬链接不可用）: $($e.Target)" -ForegroundColor DarkYellow
-                }
-            }
-            'Copy' {
-                # 文件副本：内容有差异才刷新（psync 拉取后同步副本的通道）
-                $tgt = Get-Item -LiteralPath $e.Target -Force -ErrorAction SilentlyContinue
-                if ($tgt -and $tgt.LinkType) {
-                    Remove-Item -LiteralPath $e.Target -Force -ErrorAction Stop
-                    $tgt = $null
-                }
-                elseif ($tgt -and $tgt.PSIsContainer) {
-                    Remove-Item -LiteralPath $e.Target -Recurse -Force -ErrorAction Stop
-                    $tgt = $null
-                }
-                if (-not $tgt) {
-                    Copy-Item -Path $src -Destination $e.Target -Force -ErrorAction Stop
-                    Write-Host "已恢复副本: $($e.Target)" -ForegroundColor Green
-                    continue
-                }
-                if ((Get-FileHash $src -ErrorAction SilentlyContinue).Hash -ne
-                    (Get-FileHash $e.Target -ErrorAction SilentlyContinue).Hash) {
-                    Copy-Item -Path $src -Destination $e.Target -Force -ErrorAction Stop
-                    Write-Host "已刷新副本: $($e.Target)" -ForegroundColor Green
-                }
-            }
-            'CopyDirectory' {
-                # 目录副本：先清理错误链接/文件，再用 robocopy /MIR 镜像同步。
-                # 目标中源已删除的文件也会被清理；exit code 0-7 均为成功。
-                $tgt = Get-Item -LiteralPath $e.Target -Force -ErrorAction SilentlyContinue
-                if ($tgt -and $tgt.LinkType) {
-                    Remove-Item -LiteralPath $e.Target -Force -ErrorAction Stop
-                    $tgt = $null
-                }
-                elseif ($tgt -and -not $tgt.PSIsContainer) {
-                    Remove-Item -LiteralPath $e.Target -Force -ErrorAction Stop
-                    $tgt = $null
-                }
-                if (-not $tgt) {
-                    Copy-Item -Path $src -Destination $e.Target -Recurse -Force -ErrorAction Stop
-                    Write-Host "已恢复目录副本: $($e.Target)" -ForegroundColor Green
-                    continue
-                }
-                $null = robocopy $src $e.Target /MIR /NJH /NJS /NDL /NFL /NP
-                if ($LASTEXITCODE -ge 8) {
-                    Write-Warning "目录镜像同步失败（robocopy exit $LASTEXITCODE）: $($e.Target)"
-                }
-            }
+            'SymbolicLink' { __Repair-LinkOfType -ItemType SymbolicLink -Src $src -Target $e.Target -Registry $Registry -SrcIsDir $srcIsDir }
+            'Junction'     { __Repair-LinkOfType -ItemType Junction     -Src $src -Target $e.Target -Registry $Registry -SrcIsDir $srcIsDir }
+            'HardLink'     { __Repair-LinkOfType -ItemType HardLink     -Src $src -Target $e.Target -Registry $Registry -SrcIsDir $srcIsDir }
+            'Copy'          { __Refresh-CopyEntry -Src $src -Target $e.Target -LinkType 'Copy' }
+            'CopyDirectory' { __Refresh-CopyEntry -Src $src -Target $e.Target -LinkType 'CopyDirectory' }
             default { continue }   # 未知类型不碰
         }
     }
