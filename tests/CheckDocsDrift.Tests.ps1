@@ -77,6 +77,19 @@ $wingetTools = @(
         { & $script -RepoRoot (New-TestRepo) } | Should -Not -Throw
     }
 
+    It 'Windows PowerShell 5.1 以 -File 启动时能解析默认仓库目录' {
+        $case = New-TestRepo
+        $scriptsDir = Join-Path $case 'Scripts'
+        New-Item -ItemType Directory -Path $scriptsDir | Out-Null
+        $copy = Join-Path $scriptsDir 'Check-DocsDrift.ps1'
+        Copy-Item -LiteralPath $script -Destination $copy
+
+        $output = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $copy 2>&1 | Out-String
+
+        $LASTEXITCODE | Should -Be 0
+        $output | Should -Match '校验通过'
+    }
+
     It '公开函数未收录 usage.md 时失败并指名' {
         $case = New-TestRepo
         Set-Content -Path (Join-Path $case 'docs\usage.md') -Encoding utf8BOM -Value @'
@@ -141,6 +154,39 @@ $wingetTools = @(
         Set-Content -Path (Join-Path $case 'setup.ps1') -Encoding utf8BOM -Value 'Write-Host ok'
         $err = Invoke-DriftCheck $case
         $err.Exception.Message | Should -Match '未找到 .*wingetTools 清单定义'
+    }
+
+    It 'docs 文档存在多个一级标题时失败' {
+        $case = New-TestRepo
+        Add-Content (Join-Path $case 'docs\usage.md') "`n# 重复标题"
+        (Invoke-DriftCheck $case).Exception.Message | Should -Match 'usage\.md.*一级标题'
+    }
+
+    It 'docs 本地链接目标不存在时失败' {
+        $case = New-TestRepo
+        Add-Content (Join-Path $case 'docs\usage.md') '[失效](missing.md)'
+        (Invoke-DriftCheck $case).Exception.Message | Should -Match '链接目标不存在.*missing\.md'
+    }
+
+    It 'docs 本地标题锚点不存在时失败' {
+        $case = New-TestRepo
+        Add-Content (Join-Path $case 'docs\usage.md') '[失效章节](reference.md#不存在)'
+        (Invoke-DriftCheck $case).Exception.Message | Should -Match '标题锚点不存在'
+    }
+
+    It '有效相对链接与锚点通过，外部链接不联网检查' {
+        $case = New-TestRepo
+        Add-Content (Join-Path $case 'docs\usage.md') @'
+[参考](reference.md#配置参考)
+[首页](../README.md#快速上手)
+[本页](#使用速查)
+[外部](https://example.invalid/docs#missing)
+```powershell
+# 这是示例注释
+'[示例路径](not-a-real-file.md)'
+```
+'@
+        { & $script -RepoRoot $case } | Should -Not -Throw
     }
 
     It 'aliases.ps1 语法损坏时报错不静默' {

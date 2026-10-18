@@ -21,7 +21,7 @@ git clone https://github.com/lishengshang/pwsh-profile.git <目录>   # 克隆�
 cd <目录>; .\setup.ps1
 ```
 
-> 符号链接需开发者模式或管理员权限，未开启自动回退复制模式，已有配置备份到 `backup-<时间戳>`；`starship.toml` 等外部配置 SkipIfExists——你的存量配置优先，不会被覆盖。
+> 符号链接不可用时，目录回退 Junction、文件回退 HardLink，仍失败才复制。Core 条目的原配置按需备份；外部配置首次部署保留已有目标。受管副本的同步与冲突保护边界见[配置参考](docs/reference.md#配置保护与修复)。
 
 **装完 3 件事**：
 
@@ -49,9 +49,11 @@ cd <目录>; .\setup.ps1
 
 | 文档 | 内容 |
 |---|---|
+| [文档导航](docs/README.md) | 阅读入口、术语与文档维护约定 |
 | [使用速查](docs/usage.md) | 全部命令、多设备同步 |
 | [配置参考](docs/reference.md) | 组件选择、依赖工具、环境变量开关、仓库结构 |
 | [常见问题](docs/faq.md) | 杀软拦截、模块更新、5.1 兼容边界 |
+| [维护与验证](docs/maintenance.md) | 变更检查、安装回归与启动性能验收 |
 
 ## 致谢
 

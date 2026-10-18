@@ -53,6 +53,8 @@ Mason LSP、treesitter 产物在各设备 `$env:LOCALAPPDATA\nvim-data` 自动�
    单源维护在 `Scripts/Get-ManagedLinks.ps1`，setup 与修复脚本都引用它，改链接只改
    这一处。链接注册表（%LOCALAPPDATA%\pwsh-profile\linked-targets.json）记录
    Target/Source/LinkType 三元组，Repair 按原类型修复，勿只记路径。
+   历史登记不能作为删除后来个人配置的依据：普通目录和指向别处的有效链接
+   必须保留并告警；替换内容不同的失联文件或 Copy 前先备份，备份失败不得继续替换。
    注意：git pull 和编辑器原子保存会弄断文件类硬链接，`psync`/`setup.ps1`
    结束时会自动调用 `Scripts/Repair-ConfigLinks.ps1` 修复——改动涉及被链接的
    配置文件后，无需手动处理链接。
@@ -83,15 +85,19 @@ Mason LSP、treesitter 产物在各设备 `$env:LOCALAPPDATA\nvim-data` 自动�
    `LinkRegistry.ps1`）用 `# ====` 横幅头说明职责，不写 `.SYNOPSIS`。分节一律
    `# ===== 小节名 =====`。帮助文本单源：`-h` 走 `Get-Help $PSCommandPath`，不要手写
    一份 usage；参数说明只写一处（comment-based help 或 docs/reference.md 表格二选一）。
-8. **commit message**：Conventional Commits，type 英文、正文中文。
+   docs 文档分工与格式见 docs/README.md，维护验证说明见 docs/maintenance.md；
+   开发硬约束仍只在本文件维护。文档门禁同时检查单一一级标题、本地链接及标题锚点。
+8. **commit message**：采用简短的 Conventional Commits，英文 type/scope + 中文概括。
    ```
    <type>(<scope>)?: <中文一句话，≤ 60 列，无句号>
 
-   <正文：为什么这么改、关键取舍、影响面；每行 ≤ 72 列（中文按 2 计）>
+   <可选正文：仅写必要原因或影响，优先控制在 60 字以内>
    ```
+   默认只写标题，不写正文；确有必要时才补充简短中文正文，不复述 diff 或罗列过程。
+   正文的 60 字指全文总长，不是每行；换行仍遵守每行 ≤ 72 显示列（中文按 2 计）。
    type ∈ `feat` `fix` `docs` `refactor` `perf` `test` `chore` `ci` `build` `revert`；
    目录/模块写进 scope（`fix(profile):`），不要发明中文 type 或把 `profile:` 当 type。
-   subject 不要用 `——` / `；` 塞多段内容（历史最长 228 列，`git log --oneline` 全截断）。
+   subject 不要用 `——` / `；` 塞多段内容，一句概括即可。
    一次提交只做一件事；合并提交沿用 git 默认文案。
    校验 `pwsh -File Scripts\Check-CommitMsg.ps1 -Range origin/main..HEAD`；
    本地强制（可选）`git config core.hooksPath .githooks`。

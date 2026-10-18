@@ -3,10 +3,11 @@
     文档防漂移校验：代码 ⊆ 文档的单向覆盖检查（TODO 阶段 3）。
 .DESCRIPTION
     AST 提取 profile/aliases.ps1 的函数与别名、setup.ps1 的 $wingetTools 清单，
-    校验三类单向覆盖（文档多余的条目不算漂移，允许放说明性内容）：
+    校验三类单向覆盖及文档结构（文档多余的条目不算漂移，允许放说明性内容）：
       1. 别名与未被别名代表的函数 → docs/usage.md
       2. winget 工具 Name 与 Component → docs/reference.md
       3. README「快速上手」中出现的 profile 命令 → usage.md 已收录（子集关系）
+      4. docs 下 Markdown 的单一一级标题、本地链接与标题锚点
     被 Set-Alias/New-Alias 映射的函数由别名代表接受检查（用户可见名是别名），
     __ 前缀的 profile 私有函数不参与校验。
     匹配为词边界 + 忽略大小写；已知局限：短名可能被更长的点号名（.. / ....）
@@ -15,13 +16,16 @@
 .PARAMETER RepoRoot
     仓库根目录（默认取脚本上级；测试时指向临时仓库树）。
 .NOTES
-    退出码：0 = 无漂移；1 = 存在未覆盖条目（清单随异常消息输出）。
+    退出码：0 = 检查通过；1 = 存在漂移或规范问题（清单随异常消息输出）。
 #>
 #Requires -Version 5.1
 [CmdletBinding()]
 param(
-    [string]$RepoRoot = (Split-Path $PSScriptRoot)
+    [string]$RepoRoot
 )
+
+# 5.1 以 -File 启动时，参数默认值求值阶段的 PSScriptRoot 可能尚未初始化。
+if (-not $RepoRoot) { $RepoRoot = Split-Path $PSScriptRoot }
 
 # ===== AST 提取 =====
 
@@ -137,6 +141,63 @@ function Test-DocsWord {
     return [regex]::IsMatch($Text, $pattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
 }
 
+# ===== 文档结构与链接 =====
+
+# 代码示例里的注释与链接不是文档结构，检查前先排除围栏代码块。
+function Get-DocsProse {
+    param([string]$Text)
+    return [regex]::Replace($Text, '(?ms)^ {0,3}(`{3,}|~{3,})[^\r\n]*\r?\n.*?^ {0,3}\1[ \t]*(?:\r?\n|$)', '')
+}
+
+function Get-DocsHeadingAnchor {
+    param([string]$Text)
+    $seen = @{}
+    foreach ($heading in [regex]::Matches((Get-DocsProse $Text), '(?m)^ {0,3}#{1,6}[ \t]+([^\r\n]+)')) {
+        $anchor = ($heading.Groups[1].Value.Trim() -replace '[^\p{L}\p{N}_\-\s]', '').ToLowerInvariant() -replace '\s', '-'
+        if ($seen.ContainsKey($anchor)) {
+            $seen[$anchor]++
+            "$anchor-$($seen[$anchor])"
+        }
+        else {
+            $seen[$anchor] = 0
+            $anchor
+        }
+    }
+}
+
+function Get-DocsIssue {
+    param([Parameter(Mandatory)][string]$Root)
+    foreach ($file in Get-ChildItem -LiteralPath (Join-Path $Root 'docs') -Filter '*.md' -File -Recurse) {
+        $prose = Get-DocsProse (Get-Content -LiteralPath $file.FullName -Raw -Encoding UTF8)
+        if ([regex]::Matches($prose, '(?m)^ {0,3}#[ \t]+').Count -ne 1) {
+            "$($file.Name) 必须且只能有一个一级标题"
+        }
+        foreach ($link in [regex]::Matches($prose, '(?<!!)\[[^\]\r\n]+\]\(([^)\s]+)\)')) {
+            $target = $link.Groups[1].Value
+            # 外部 URL 不在本地门禁联网验证，避免网络波动影响文档检查。
+            if ($target -match '^[A-Za-z][A-Za-z0-9+.-]*:' -and $target -notmatch '^[A-Za-z]:') { continue }
+            $parts = $target -split '#', 2
+            $relative = [Uri]::UnescapeDataString($parts[0])
+            if ([IO.Path]::IsPathRooted($relative)) {
+                "$($file.Name) 本地链接必须使用相对路径: $target"
+                continue
+            }
+            $local = $file.FullName
+            if ($relative) { $local = [IO.Path]::GetFullPath((Join-Path $file.DirectoryName $relative)) }
+            if (-not (Test-Path -LiteralPath $local -PathType Leaf)) {
+                "$($file.Name) 链接目标不存在: $target"
+                continue
+            }
+            if ($parts.Count -gt 1 -and $parts[1] -and $local -match '\.md$') {
+                $anchors = @(Get-DocsHeadingAnchor (Get-Content -LiteralPath $local -Raw -Encoding UTF8))
+                if ([Uri]::UnescapeDataString($parts[1]) -cnotin $anchors) {
+                    "$($file.Name) 标题锚点不存在: $target"
+                }
+            }
+        }
+    }
+}
+
 # ===== 主流程 =====
 
 $aliasesPath = Join-Path $RepoRoot 'profile\aliases.ps1'
@@ -148,12 +209,12 @@ foreach ($p in $aliasesPath, $setupPath, $usagePath, $refPath, $readmePath) {
     if (-not (Test-Path $p)) { throw "被检文件不存在: $p" }
 }
 
-$usage     = Get-Content $usagePath -Raw
-$reference = Get-Content $refPath -Raw
+$usage     = Get-Content $usagePath -Raw -Encoding UTF8
+$reference = Get-Content $refPath -Raw -Encoding UTF8
 $cmd       = Get-ProfileCommand $aliasesPath
 $tools     = Get-SetupTool $setupPath
 
-$missing = @()
+$missing = @(Get-DocsIssue -Root $RepoRoot)
 
 # 1. 别名必须收录（用户实际敲的名字）
 foreach ($a in $cmd.Aliases) {
@@ -174,7 +235,7 @@ foreach ($t in $tools) {
 # 4. README「快速上手」中的 profile 命令必须是 usage.md 已收录命令的子集
 #    （AGENTS.md：README 只保留高频子集）；非 profile 命令（git push、z 等
 #    定义在 aliases.ps1 之外的）不在静态提取范围，跳过
-$readme = Get-Content $readmePath -Raw
+$readme = Get-Content $readmePath -Raw -Encoding UTF8
 if ($readme -match '(?s)## 快速上手\r?\n(.*?)(?=\r?\n## |\z)') {
     $checkedNames = @($cmd.Functions) + @($cmd.Aliases)
     foreach ($span in [regex]::Matches($Matches[1], '`([^`]+)`')) {
@@ -191,7 +252,7 @@ else {
 
 if ($missing.Count) {
     foreach ($m in $missing) { Write-Host "文档漂移: $m" -ForegroundColor Yellow }
-    throw "文档防漂移校验失败：$($missing.Count) 处代码有而文档无——$($missing -join '；')"
+    throw "文档防漂移校验失败：$($missing.Count) 处覆盖或规范问题——$($missing -join '；')"
 }
 Write-Host ("文档防漂移校验通过：{0} 个命令（函数 {1} + 别名 {2}）、{3} 个 winget 工具均有文档覆盖" -f
     (@($cmd.Functions).Count + @($cmd.Aliases).Count), @($cmd.Functions).Count, @($cmd.Aliases).Count, @($tools).Count)
