@@ -106,6 +106,78 @@ Describe 'Repair-ConfigLinks 五类链接修复' {
         (Get-Item $tgt -Force).CreationTime | Should -Be $created
     }
 
+    It 'Junction：旧登记不能接管后来创建的个人目录' {
+        New-Item -ItemType Directory -Path $tgt | Out-Null
+        Set-Content (Join-Path $tgt 'personal.lua') 'personal'
+
+        Invoke-TestRepair @{ Target = $tgt; Source = $src; LinkType = 'Junction' } -RegistryPath $reg -ScriptPath $repairScript
+
+        (Get-Item $tgt -Force).LinkType | Should -BeNullOrEmpty
+        Get-Content (Join-Path $tgt 'personal.lua') | Should -Be 'personal'
+    }
+
+    It 'Junction：保留用户重新指向的有效链接' {
+        $personal = Join-Path $case 'personal'
+        New-Item -ItemType Directory -Path $personal | Out-Null
+        Set-Content (Join-Path $personal 'keep.txt') 'personal'
+        $null = New-Item -ItemType Junction -Path $tgt -Target $personal
+
+        Invoke-TestRepair @{ Target = $tgt; Source = $src; LinkType = 'Junction' } -RegistryPath $reg -ScriptPath $repairScript
+
+        Get-LinkTargetPath $tgt | Should -Be $personal
+        Get-Content (Join-Path $tgt 'keep.txt') | Should -Be 'personal'
+    }
+
+    It 'HardLink：重建前备份与源不同的失联文件' {
+        $srcFile = Join-Path $src 'app.toml'
+        Set-Content $srcFile 'repo'
+        Set-Content $tgt 'personal'
+
+        Invoke-TestRepair @{ Target = $tgt; Source = $srcFile; LinkType = 'HardLink' } -RegistryPath $reg -ScriptPath $repairScript
+
+        Get-Content $tgt | Should -Be 'repo'
+        $backups = @(Get-ChildItem -LiteralPath $case -Filter 'tgt.conflict-*')
+        $backups.Count | Should -Be 1
+        Get-Content -LiteralPath $backups[0].FullName | Should -Be 'personal'
+        & $repairScript -Registry $reg
+        @(Get-ChildItem -LiteralPath $case -Filter 'tgt.conflict-*').Count | Should -Be 1
+    }
+
+    It 'Copy：刷新前备份原内容' {
+        $srcFile = Join-Path $src 'app.toml'
+        Set-Content $srcFile 'repo'
+        Set-Content $tgt 'personal'
+
+        Invoke-TestRepair @{ Target = $tgt; Source = $srcFile; LinkType = 'Copy' } -RegistryPath $reg -ScriptPath $repairScript
+
+        Get-Content $tgt | Should -Be 'repo'
+        $backups = @(Get-ChildItem -LiteralPath $case -Filter 'tgt.conflict-*')
+        $backups.Count | Should -Be 1
+        Get-Content -LiteralPath $backups[0].FullName | Should -Be 'personal'
+    }
+
+    It '<Type>：备份失败时保留原文件并继续处理后续目标' -ForEach @(
+        @{ Type = 'HardLink' }
+        @{ Type = 'Copy' }
+    ) {
+        $srcFile = Join-Path $src 'app.toml'
+        $nextTarget = Join-Path $case 'next.toml'
+        Set-Content $srcFile 'repo'
+        Set-Content $tgt 'personal'
+        Mock Copy-Item { [IO.File]::Copy($Path, $Destination, $true) }
+        Mock Copy-Item { throw '备份不可写' } -ParameterFilter { $Destination -like '*.conflict-*' }
+        Save-LinkRegistryEntries -Path $reg -Entries @(
+            [pscustomobject]@{ Target = $tgt; Source = $srcFile; LinkType = $Type }
+            [pscustomobject]@{ Target = $nextTarget; Source = $srcFile; LinkType = 'Copy' }
+        )
+
+        & $repairScript -Registry $reg
+
+        Get-Content $tgt | Should -Be 'personal'
+        Get-Content $nextTarget | Should -Be 'repo'
+        Should -Invoke Copy-Item -Times 1 -Exactly -ParameterFilter { $Destination -like '*.conflict-*' }
+    }
+
     It 'Copy：源更新后按哈希刷新副本' {
         $srcFile = Join-Path $src 'app.toml'
         Set-Content -Path $srcFile -Value 'v1'
@@ -219,7 +291,7 @@ Describe 'Repair-ConfigLinks SymbolicLink 分支（按环境二选一断言）' 
 
     It 'SymbolicLink：目标缺失时重建符号链接（符号链接可用环境）' {
         if (-not $symlinkAvailable) {
-            Write-Host '跳过：当前环境无符号链接权限'
+            Set-ItResult -Skipped -Because '当前环境无符号链接权限'
             return
         }
         $case = Join-Path $root ([guid]::NewGuid().ToString('N'))
@@ -241,7 +313,7 @@ Describe 'Repair-ConfigLinks SymbolicLink 分支（按环境二选一断言）' 
 
     It 'SymbolicLink：无权限时降级为 Copy 并更新注册表（非管理员环境）' {
         if ($symlinkAvailable) {
-            Write-Host '跳过：当前环境有符号链接权限，走不到降级分支'
+            Set-ItResult -Skipped -Because '当前环境有符号链接权限，走不到降级分支'
             return
         }
         $case = Join-Path $root ([guid]::NewGuid().ToString('N'))

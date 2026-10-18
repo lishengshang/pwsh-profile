@@ -152,11 +152,19 @@ if ($Yes)            { $setupArgs += '-Yes' }
 
 if ($pwshPath) {
     & $pwshPath @('-NoProfile', '-File', $setup) @setupArgs
-    Write-Host "`n引导完成。请关闭本窗口，打开 Windows Terminal 或新的 PowerShell 7 窗口。" -ForegroundColor Cyan
 }
 else {
     # 5.1 默认执行策略 Restricted，必须 -ExecutionPolicy Bypass 才能运行脚本
     Write-Host "`n未安装 PowerShell 7：使用 Windows PowerShell 5.1 完成部署（兼容模式）。" -ForegroundColor DarkYellow
     & (Join-Path $PSHOME 'powershell.exe') @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $setup) @setupArgs
+}
+# 原生命令的非零退出码不会被 ErrorActionPreference=Stop 转为异常。
+if ($LASTEXITCODE -ne 0) {
+    throw "setup.ps1 安装失败（exit $LASTEXITCODE）。请处理上方错误后重新运行引导。"
+}
+if ($pwshPath) {
+    Write-Host "`n引导完成。请关闭本窗口，打开 Windows Terminal 或新的 PowerShell 7 窗口。" -ForegroundColor Cyan
+}
+else {
     Write-Host "`n引导完成。打开新的 PowerShell 窗口即可使用（兼容模式；随时可补装 PowerShell 7 获得完整体验）。" -ForegroundColor Cyan
 }

@@ -57,14 +57,12 @@ $profileDir = [System.IO.Path]::GetFullPath((Split-Path $PROFILE)).TrimEnd('\')
 #   外部条目（starship/lazygit/yazi/nvim）即使仓库即 $PROFILE 目录也照常链接；
 #   SkipIfExists：目标已存在时不动它（用户自己的配置优先），仅缺失时引入仓库默认。
 $linkItems = @(. (Join-Path $repoDir 'Scripts\Get-ManagedLinks.ps1'))
-# 按组件选择过滤外部配置；Core 条目是 profile 本体，始终部署
 # 防呆：既非 Core 又无合法 Component 的条目会被静默跳过，提前告警（同 $wingetTools）
 foreach ($l in $linkItems) {
     if (-not $l.Core -and $l.Component -notin $allComponents) {
         Write-Warning "链接条目 '$($l.Source)' 既非 Core 也无合法 Component，它不会被链接——请修正 Get-ManagedLinks.ps1。"
     }
 }
-$linkItems = @($linkItems | Where-Object { $_.Core -or ($effectiveComponents -contains $_.Component) })
 
 # winget 工具清单（与 docs/reference.md「依赖工具」表保持一致）
 # 每项的 Component 决定它属于哪个安装组件；Desc 是向导与安装日志里的一句话用途；
@@ -118,6 +116,8 @@ if ($pendingWizard) {
     $effectiveComponents = @($wizardChoice.Components)
     $ExcludeTools        = @($wizardChoice.ExcludeTools)
 }
+# 向导可能增删默认组件，必须等最终选择确定后再过滤，避免部署清单停留在 Standard。
+$linkItems = @($linkItems | Where-Object { $_.Core -or ($effectiveComponents -contains $_.Component) })
 # -ExcludeTools 直接传参时同样归一化（逗号分隔兼容 pwsh -File 的单 token 形态）
 $ExcludeTools = if ($ExcludeTools) { @(__NormalizeComponents $ExcludeTools) } else { @() }
 Write-Host "安装组件: $($effectiveComponents -join ', ')" -ForegroundColor Cyan
@@ -126,8 +126,8 @@ if ($ExcludeTools) {
 }
 
 # 链接注册表（机器本地状态，不入库）：登记 setup 创建/发现的受管目标，
-# Repair-ConfigLinks.ps1 的修复依据。读写函数与幂等判定（Get-ManagedLinkState）、
-# 旧 txt 迁移转换单源在 Scripts/LinkRegistry.ps1（原子写，防并发损坏）。
+# Repair-ConfigLinks.ps1 的修复依据。读写与幂等判定（Get-ManagedLinkState）
+# 单源在 Scripts/LinkRegistry.ps1（原子写，防并发损坏）。
 . (Join-Path $repoDir 'Scripts\LinkRegistry.ps1')
 $__RegistryPath = Join-Path $env:LOCALAPPDATA 'pwsh-profile\linked-targets.json'
 

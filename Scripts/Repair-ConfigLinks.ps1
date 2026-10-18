@@ -11,6 +11,8 @@
     永远不碰。修复类型不可用时降级为 Copy 并更新注册表（下次不再徒劳重试）。
     注册表 JSON 损坏时自动备份 .corrupt-<时间戳> 并按清单与磁盘状态重建。
     setup.ps1 建链后与 psync 拉取成功后自动调用。
+    历史登记遇到普通目录或指向别处的有效链接时保留目标并告警；替换内容不同的
+    普通文件前在同目录保留 .conflict-<时间戳>-<随机标识> 副本，备份失败则跳过该项。
 #>
 #Requires -Version 5.1
 # 位置须在帮助块之后——放在首位会让 Get-Help / -? 读不到下面的帮助注释块
@@ -24,23 +26,48 @@ $repoDir = Split-Path $PSScriptRoot
 # 注册表读写单源在 LinkRegistry.ps1（原子写；路径规范化的两个 helper 也在此）
 . (Join-Path $PSScriptRoot 'LinkRegistry.ps1')
 
-# 内部：删除与预期不符的目标。Get-Item -Force 能拿到断链对象（Test-Path 不可靠），
-# 有链接属性按链接点 Force 删；普通目录必须 Recurse；普通文件 Force。
-function __Remove-ConflictingTarget {
-    param(
-        [Parameter(Mandatory)][string]$Target,
-        [Parameter(Mandatory)]$Item
-    )
-    if ($Item.LinkType -or -not $Item.PSIsContainer) {
-        Remove-Item -LiteralPath $Target -Force -ErrorAction Stop
-    }
-    else {
-        Remove-Item -LiteralPath $Target -Recurse -Force -ErrorAction Stop
-    }
+# 登记只能证明过去受管，不能证明后来放在同路径的个人配置仍属于仓库。
+# 普通文件又可能是 git 原子替换留下的失联硬链接，先保留旧内容再重建。
+function __Save-RepairConflict {
+    param([Parameter(Mandatory)][string]$Target)
+    $backup = "$Target.conflict-$(Get-Date -Format 'yyyyMMdd-HHmmss')-$([guid]::NewGuid().ToString('N'))"
+    Copy-Item -LiteralPath $Target -Destination $backup -ErrorAction Stop
+    Write-Warning "原文件已保留到 $backup；确认内容后可手动归档或删除备份。"
 }
 
-# 内部：刷新已登记的副本（Copy/CopyDirectory）。先清理类型不符的目标（链接、
-# 文件↔目录颠倒），目标丢失则按源类型恢复；仍在的目录用 robocopy /MIR 镜像
+function __Clear-RepairTarget {
+    param(
+        [Parameter(Mandatory)][string]$Target,
+        [Parameter(Mandatory)]$Item,
+        [Parameter(Mandatory)][string]$Src
+    )
+    if ($Item.LinkType -in 'SymbolicLink', 'Junction') {
+        $linkTarget = __Get-PrimaryLinkTarget $Item
+        if ($linkTarget -and -not [IO.Path]::IsPathRooted($linkTarget)) {
+            $linkTarget = Join-Path (Split-Path $Target) $linkTarget
+        }
+        if (-not $linkTarget -or ((Test-Path -LiteralPath $linkTarget) -and
+            (__Get-NormalizedFullPath $linkTarget) -ine (__Get-NormalizedFullPath $Src))) {
+            Write-Warning "保留配置冲突（有效链接指向别处或目标无法确认）: $Target。请先手动备份并移走目标，再重试修复。"
+            return $false
+        }
+    }
+    elseif ($Item.PSIsContainer) {
+        Write-Warning "保留配置冲突（原链接已被普通目录替代）: $Target。请先手动备份并移走目录，再重试修复。"
+        return $false
+    }
+    else {
+        $sameContent = (Test-Path -LiteralPath $Src -PathType Leaf) -and
+            (Get-FileHash -LiteralPath $Src -ErrorAction Stop).Hash -eq
+            (Get-FileHash -LiteralPath $Target -ErrorAction Stop).Hash
+        if (-not $sameContent) { __Save-RepairConflict -Target $Target }
+    }
+    Remove-Item -LiteralPath $Target -Force -ErrorAction Stop
+    return $true
+}
+
+# 内部：刷新已登记的副本（Copy/CopyDirectory）。类型冲突先走保护分支，
+# 目标丢失则按源类型恢复；仍在的目录用 robocopy /MIR 镜像
 # （源已删除的文件也会被清理；exit code 0-7 均为成功），文件哈希有差异才刷新
 # （psync 拉取后同步副本的通道）。
 # 注：switch 的 case 条件写数组（'Copy','CopyDirectory'）不产生「任一匹配」
@@ -54,7 +81,7 @@ function __Refresh-CopyEntry {
     $isDir = $LinkType -eq 'CopyDirectory'
     $tgt = Get-Item -LiteralPath $Target -Force -ErrorAction SilentlyContinue
     if ($tgt -and ($tgt.LinkType -or $tgt.PSIsContainer -ne $isDir)) {
-        __Remove-ConflictingTarget -Target $Target -Item $tgt
+        if (-not (__Clear-RepairTarget -Target $Target -Item $tgt -Src $Src)) { return }
         $tgt = $null
     }
     if (-not $tgt) {
@@ -74,15 +101,16 @@ function __Refresh-CopyEntry {
             Write-Warning "目录镜像同步失败（robocopy exit $LASTEXITCODE）: $Target"
         }
     }
-    elseif ((Get-FileHash $Src -ErrorAction SilentlyContinue).Hash -ne
-        (Get-FileHash $Target -ErrorAction SilentlyContinue).Hash) {
+    elseif ((Get-FileHash -LiteralPath $Src -ErrorAction Stop).Hash -ne
+        (Get-FileHash -LiteralPath $Target -ErrorAction Stop).Hash) {
+        __Save-RepairConflict -Target $Target
         Copy-Item -Path $Src -Destination $Target -Force -ErrorAction Stop
         Write-Host "已刷新副本: $Target" -ForegroundColor Green
     }
 }
 
 # 内部：按登记类型重建链接。SymbolicLink/Junction/HardLink 的「已是正确链接则跳过
-# → 清理错误目标 → 重建 → 失败按源类型降级 Copy 并回写注册表」结构完全一致，
+# → 处理目标冲突 → 重建 → 失败按源类型降级 Copy 并回写注册表」结构完全一致，
 # 参数化单点维护——同一处逻辑写三遍，任何一处漏改都会造成类型间行为漂移。
 # Junction 只适用于目录、HardLink 只适用于文件，降级 Copy/CopyDirectory 由源
 # 类型天然决定，三分支得以共用同一段降级代码。
@@ -111,7 +139,7 @@ function __Repair-LinkOfType {
             if ($tgt.LinkType -eq $ItemType -and $tgtTarget -and
                 (__Get-NormalizedFullPath $tgtTarget) -ieq $srcFull) { return }
         }
-        __Remove-ConflictingTarget -Target $Target -Item $tgt
+        if (-not (__Clear-RepairTarget -Target $Target -Item $tgt -Src $Src)) { return }
     }
     try {
         $null = New-Item -ItemType $ItemType -Path $Target -Target $Src -ErrorAction Stop
