@@ -9,6 +9,10 @@ Describe 'Conda 初始化接入' {
         $originalNoConda = $env:PROFILE_NO_CONDA
         $originalFzfOptions = $env:FZF_DEFAULT_OPTS
         function Use-CachedInit {
+            [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'Command', Justification = 'Pester 桩函数仅用于参数断言')]
+            [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'CacheFile', Justification = 'Pester 桩函数仅用于参数断言')]
+            [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'Arguments', Justification = 'Pester 桩函数仅用于参数断言')]
+            [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'TtlDays', Justification = 'Pester 桩函数仅用于参数断言')]
             param($Command, $CacheFile, $Arguments, $TtlDays)
         }
     }
