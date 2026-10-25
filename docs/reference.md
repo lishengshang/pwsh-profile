@@ -15,6 +15,7 @@
 | `editor` | Neovim、WinLibs gcc | `nvim/`，基于 LazyVim |
 | `files` | Yazi、ffmpeg、jq、poppler、ImageMagick | `yazi/theme.toml`；另安装 Solarized flavor |
 | `gitui` | lazygit | `lazygit/config.yml` |
+| `python` | Miniforge（Python 与 Conda） | 无 |
 
 预设：Minimal = `core`；Standard = `core,completion,gitui`；Full = 全部。没有显式组件参数时，交互终端默认进入向导；非交互运行或指定 `-Yes` 时使用 Standard。向导允许不选组件，此时只部署 Core 条目。
 
@@ -65,6 +66,7 @@ PowerShell 7+ 提供完整体验；Windows PowerShell 5.1 提供兼容模式。G
 | poppler（`oschwartz10612.Poppler`） | files | PDF 预览 | 对应预览能力不可用 |
 | ImageMagick（`ImageMagick.ImageMagick`） | files | 图像与字体预览 | 对应预览能力受限 |
 | lazygit（`JesseDuffield.lazygit`） | gitui | Git 界面 | 不创建 `lg` |
+| Miniforge（`CondaForge.Miniforge3`） | python | Python 与 Conda 环境管理 | 不初始化 conda，其他 Python 命令由系统 PATH 决定 |
 | Terminal-Icons（`Install-Module`） | core | 内置列表图标 | 使用普通列表 |
 | PSCompletions（`Install-Module`） | completion | 命令补全 | `psc` 提示安装或重开终端 |
 | PSFzf（`Install-Module`） | completion | fzf 交互集成 | 对应快捷键不可用 |
@@ -120,6 +122,7 @@ setup 接管 Core 条目的旧配置时按需生成 `backup-<yyyyMMdd-HHmmss>` �
 | `PROFILE_NO_COMPLETIONS` | 跳过 PSCompletions 导入，不关闭 PSFzf |
 | `PROFILE_NO_FZF_TAB` | 不启用 PSFzf 的 TabExpansion，不关闭其其他快捷键 |
 | `PROFILE_NO_FNM` | 跳过 fnm 初始化，node/npm 等由系统 PATH 解析 |
+| `PROFILE_NO_CONDA` | 跳过 Conda shell hook 初始化，不卸载或修改既有环境 |
 | `PROFILE_KEEP_PARENT_PATH` | 保留父进程 PATH，避免丢弃 IDE、虚拟环境等注入的路径 |
 | `PROFILE_DEBUG` | 输出模块耗时及加载失败信息 |
 | `PWSH_PROFILE_QUIET` | 关闭 5.1 下“已安装 PowerShell 7”的兼容提示 |
@@ -135,6 +138,8 @@ Remove-Item Env:PROFILE_KEEP_PARENT_PATH
 ## 加载与补全边界
 
 Starship 初始化延迟到首次提示符，zoxide 延迟到首次 `z` / `zi`，fnm 延迟到首次 node/npm/npx/corepack。Starship 与 zoxide 初始化脚本使用 7 天缓存，工具修改时间更新时失效；fnm 输出包含进程独立路径，不跨会话缓存。
+
+Conda shell hook 在加载 profile 时执行，缓存到 `$env:TEMP\conda-init-cache.ps1`，仅按 `conda.exe` 修改时间失效。运行时依次探测 PATH、`CONDA_EXE` 和 Miniforge 常见安装目录，因此已有 Conda 不要求安装 `python` 组件；缓存异常时可删除该文件后重开终端。
 
 PSReadLine 提供编辑、历史搜索与基础 Tab 绑定；PSCompletions 在顶层导入；PSFzf 在首次空闲时导入，并可设置自己的 TabExpansion。多个组件均可能设置 Tab，实际效果取决于模块版本与初始化顺序；本项目尚未统一这部分职责。排障见[常见问题](faq.md#tab-补全或-fzf-快捷键不符合预期)。
 

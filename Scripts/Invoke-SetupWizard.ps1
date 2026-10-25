@@ -16,6 +16,7 @@ $script:WizardComponents = @(
     @{ Key = 'gitui';      Mark = '推荐';       Desc = 'lazygit 终端 Git UI（lg 命令）' }
     @{ Key = 'editor';     Mark = '可选';       Desc = 'Neovim + LazyVim 编辑器（含 treesitter 编译器 WinLibs gcc）' }
     @{ Key = 'files';      Mark = '可选';       Desc = 'yazi 终端文件管理器（y 命令）及预览依赖' }
+    @{ Key = 'python';     Mark = '可选';       Desc = 'Miniforge（Python 与 Conda 环境管理）' }
 )
 
 # 解析用户输入：按逗号/空白拆分为小写 token（'1 3,core' → '1','3','core'）

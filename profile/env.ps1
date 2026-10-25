@@ -80,3 +80,15 @@ if (-not $env:YAZI_FILE_ONE -and $global:__Tools.ContainsKey('yazi')) {
         if (Test-Path $_fileOne) { $env:YAZI_FILE_ONE = $_fileOne; break }
     }
 }
+
+# conda：hook 可按工具版本缓存，避免每次启动都调用 conda.exe；
+# PROFILE_NO_CONDA=1 完全跳过。
+if (-not $env:PROFILE_NO_CONDA -and $global:__Tools.ContainsKey('conda')) {
+    $__condaHook = @{
+        Command   = 'conda'
+        CacheFile = Join-Path $env:TEMP 'conda-init-cache.ps1'
+        Arguments = @('shell.powershell', 'hook')
+        TtlDays   = 0
+    }
+    Use-CachedInit @__condaHook
+}

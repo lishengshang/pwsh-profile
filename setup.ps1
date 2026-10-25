@@ -36,7 +36,7 @@ $ErrorActionPreference = 'Stop'
 # 未装的工具运行时被 $global:__Tools.ContainsKey 守卫自动降级，故装不装即等于
 # 有没有该功能，无需改 profile 代码。
 #   -Minimal = core；-Full = 全部；无开关 = Standard（core+completion+gitui）
-$allComponents      = 'core', 'completion', 'editor', 'files', 'gitui'
+$allComponents      = 'core', 'completion', 'editor', 'files', 'gitui', 'python'
 $standardComponents = 'core', 'completion', 'gitui'
 
 # 解析矩阵单源在 Scripts/Resolve-SetupComponents.ps1（可测试单元；
@@ -87,6 +87,7 @@ $wingetTools = @(
     # lazygit（终端 git UI）与 LazyVim 的 treesitter 编译器
     @{ Name = 'lazygit';     Id = 'JesseDuffield.lazygit';          Component = 'gitui'; Desc = '终端 Git UI（lg）' }
     @{ Name = 'WinLibs gcc'; Id = 'BrechtSanders.WinLibs.POSIX.UCRT'; Component = 'editor'; Desc = 'treesitter 编译器（Neovim 需要）' }
+    @{ Name = 'Miniforge';   Id = 'CondaForge.Miniforge3';          Component = 'python'; Desc = 'Python 与 Conda 环境管理'; Optional = $true }
 )
 # 防呆：缺 Component 标注（或值非法）的条目会被组件过滤静默跳过、永不安装，
 # 提前显式告警，避免"加了工具却怎么都装不上"的排查成本
