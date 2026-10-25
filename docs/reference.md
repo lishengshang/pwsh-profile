@@ -120,7 +120,7 @@ setup 接管 Core 条目的旧配置时按需生成 `backup-<yyyyMMdd-HHmmss>` �
 | `PROFILE_NO_TIME` | 关闭总耗时显示 |
 | `PROFILE_NO_STARTUP` | 关闭启动问候与速查信息 |
 | `PROFILE_NO_COMPLETIONS` | 跳过 PSCompletions 导入，不关闭 PSFzf |
-| `PROFILE_NO_FZF_TAB` | 不启用 PSFzf 的 TabExpansion，不关闭其其他快捷键 |
+| `PROFILE_FZF_TAB` | 启用 PSFzf 的 TabExpansion；默认由 PSCompletions 接管 Tab |
 | `PROFILE_NO_FNM` | 跳过 fnm 初始化，node/npm 等由系统 PATH 解析 |
 | `PROFILE_NO_CONDA` | 跳过 Conda shell hook 初始化，不卸载或修改既有环境 |
 | `PROFILE_KEEP_PARENT_PATH` | 保留父进程 PATH，避免丢弃 IDE、虚拟环境等注入的路径 |
@@ -141,7 +141,7 @@ Starship 初始化延迟到首次提示符，zoxide 延迟到首次 `z` / `zi`�
 
 Conda shell hook 在加载 profile 时执行，缓存到 `$env:TEMP\conda-init-cache.ps1`，仅按 `conda.exe` 修改时间失效。运行时依次探测 PATH、`CONDA_EXE` 和 Miniforge 常见安装目录，因此已有 Conda 不要求安装 `python` 组件；缓存异常时可删除该文件后重开终端。
 
-PSReadLine 提供编辑、历史搜索与基础 Tab 绑定；PSCompletions 在顶层导入；PSFzf 在首次空闲时导入，并可设置自己的 TabExpansion。多个组件均可能设置 Tab，实际效果取决于模块版本与初始化顺序；本项目尚未统一这部分职责。排障见[常见问题](faq.md#tab-补全或-fzf-快捷键不符合预期)。
+PSReadLine 提供编辑、历史搜索与基础 Tab 绑定；PSCompletions 在顶层导入并负责默认补全；PSFzf 在首次空闲时导入，默认只注册 Ctrl+t、Ctrl+r 和 Git 选择快捷键，不接管 Tab。需要 fzf-tab 时设置 `PROFILE_FZF_TAB=1`，此时可能覆盖 PSCompletions 的补全菜单。排障见[常见问题](faq.md#tab-补全或-fzf-快捷键不符合预期)。
 
 显示的 `Profile loaded in ...` 从工具探测前开始计时，不包含前面的仓库发现、PATH 重建，也不包含首次提示符和空闲加载。性能验收方法见[维护与验证](maintenance.md#启动性能与交互验收)。
 

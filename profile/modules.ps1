@@ -56,9 +56,8 @@ $null = Register-EngineEvent -SourceIdentifier PowerShell.OnIdle -Action {
         Import-Module PSFzf -ErrorAction SilentlyContinue
         if (Get-Command Set-PsFzfOption -ErrorAction SilentlyContinue) {
             Set-PsFzfOption -PSReadlineChordProvider 'Ctrl+t' -PSReadlineChordReverseHistory 'Ctrl+r' -GitKeyBindings
-            # fzf-tab 式 Tab 补全（Tab 弹出 fzf 选择，右侧实时预览）。
-            # 若与 PSCompletions 的补全菜单冲突，设 $env:PROFILE_NO_FZF_TAB=1 恢复默认 Tab
-            if (-not $env:PROFILE_NO_FZF_TAB) {
+            # PSFzf 不默认接管 Tab（PSCompletions 负责补全）；需要 fzf-tab 时显式开启
+            if ($env:PROFILE_FZF_TAB) {
                 Set-PsFzfOption -TabExpansion -TabCompletionPreviewWindow 'right:60%'
             }
         }

@@ -64,7 +64,7 @@ Get-PSReadLineKeyHandler -Chord Tab,'Ctrl+t','Ctrl+r'
 Get-Module PSReadLine,PSCompletions,PSFzf
 ```
 
-PSReadLine、PSCompletions、PSFzf 都可能影响补全。需要排除 PSFzf TabExpansion 时，在加载前设置 `PROFILE_NO_FZF_TAB=1`；排除 PSCompletions 时设置 `PROFILE_NO_COMPLETIONS=1`。两者职责不同，具体说明见[加载与补全边界](reference.md#加载与补全边界)。
+PSReadLine、PSCompletions、PSFzf 都可能影响补全。PSFzf 默认不接管 Tab；如需 fzf-tab，在加载前设置 `PROFILE_FZF_TAB=1`，发生冲突时先移除该变量。排除 PSCompletions 时设置 `PROFILE_NO_COMPLETIONS=1`。具体说明见[加载与补全边界](reference.md#加载与补全边界)。
 
 开关非空即启用，设成 `0` 并不会关闭。移除变量后重开终端复查。非交互测试会跳过部分键位设置，不能证明真实终端中的绑定正确。
 
