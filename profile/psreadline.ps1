@@ -9,22 +9,27 @@ $psrlOption = Get-Command Set-PSReadLineOption -ErrorAction SilentlyContinue
 if (-not $psrlOption) { return }
 
 # 各版本均支持的核心参数
+$colors = @{
+    Command   = '#268BD2'
+    Member    = '#268BD2'
+    Operator  = '#859900'
+    Number    = '#D33682'
+    Type      = '#B58900'
+    Variable  = '#CB4B16'
+    Parameter = '#657B83'
+    Default   = '#839496'
+}
+# PSReadLine 2.0（Windows PowerShell 5.1 自带）不认识预测相关颜色键，
+# 传入会抛错并中断整段配置；它们在 2.1+ 才存在，与下方能力检测同源。
+if ($psrlOption.Parameters.ContainsKey('PredictionSource')) {
+    $colors.InlinePrediction       = '#93A1A1'
+    $colors.ListPrediction         = '#2AA198'
+    $colors.ListPredictionSelected = '#073642'
+}
 Set-PSReadLineOption `
     -HistoryNoDuplicates `
     -MaximumHistoryCount 10000 `
-    -Colors @{
-        Command                = '#268BD2'
-        Member                 = '#268BD2'
-        Operator               = '#859900'
-        Number                 = '#D33682'
-        Type                   = '#B58900'
-        Variable               = '#CB4B16'
-        Parameter              = '#657B83'
-        Default                = '#839496'
-        InlinePrediction       = '#93A1A1'
-        ListPrediction         = '#2AA198'
-        ListPredictionSelected = '#073642'
-    }
+    -Colors $colors
 
 # 能力检测：旧版 PSReadLine 不认识的新参数逐项降级，
 # 避免一个参数错误中断整个 profile 加载链
