@@ -35,7 +35,7 @@ jobs:
       # 5.1 作业里 runner 预装了 pwsh，会触发「建议改用 pwsh」轻提示；CI 里关掉
       PWSH_PROFILE_QUIET: '1'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: 语法解析全部 .ps1
         run: |
@@ -223,7 +223,7 @@ jobs:
       BEFORE_SHA: ${{ github.event.before }}
     steps:
       # 逐条校验区间内的提交信息需要完整历史（checkout 默认 depth=1 只有 HEAD）
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
