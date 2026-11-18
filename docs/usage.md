@@ -72,6 +72,15 @@ Git 命令需要已安装 Git。`gquick` 会暂存未跟踪文件，执行前先
 
 `EDITOR` 含空格的可执行路径需用双引号包裹；复杂的参数引用建议放进独立 wrapper 脚本。wallpaper 参数以 `Get-Help .\Scripts\wallpaper.ps1 -Detailed` 为准。Tab 的组件关系与关闭开关见[补全边界](reference.md#加载与补全边界)。
 
+## Python 环境
+
+| 命令 | 说明 |
+|---|---|
+| `conda activate <环境>` / `conda deactivate` | 在当前终端激活或退出 Conda 环境。首次执行 `conda` 时初始化 |
+| `conda run -n <环境> <命令>` | 在指定环境执行命令，调用终端无需激活该环境 |
+
+uv 项目可用 `uv add` 管理项目依赖、用 `uv run` 执行命令。先退出 Conda 再激活 uv 的 `.venv`，避免裸 `pip` 解析到 Conda 环境。
+
 ## 多设备同步
 
 | 命令 | 说明 |

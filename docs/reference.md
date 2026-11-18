@@ -122,7 +122,7 @@ setup 接管 Core 条目的旧配置时按需生成 `backup-<yyyyMMdd-HHmmss>` �
 | `PROFILE_NO_COMPLETIONS` | 跳过 PSCompletions 导入，不关闭 PSFzf |
 | `PROFILE_FZF_TAB` | 启用 PSFzf 的 TabExpansion；默认由 PSCompletions 接管 Tab |
 | `PROFILE_NO_FNM` | 跳过 fnm 初始化，node/npm 等由系统 PATH 解析 |
-| `PROFILE_NO_CONDA` | 跳过 Conda shell hook 初始化，不卸载或修改既有环境 |
+| `PROFILE_NO_CONDA` | 跳过 profile 提供的 Conda 按需初始化 |
 | `PROFILE_KEEP_PARENT_PATH` | 强制保留父进程 PATH，例如保留 IDE 注入的路径 |
 | `PROFILE_DEBUG` | 输出模块耗时及加载失败信息 |
 | `PWSH_PROFILE_QUIET` | 关闭 5.1 下“已安装 PowerShell 7”的兼容提示 |
@@ -139,7 +139,7 @@ Remove-Item Env:PROFILE_KEEP_PARENT_PATH
 
 Starship 初始化延迟到首次提示符，zoxide 延迟到首次 `z` / `zi`，fnm 延迟到首次 node/npm/npx/corepack。Starship 与 zoxide 初始化脚本使用 7 天缓存，工具修改时间更新时失效；fnm 输出包含进程独立路径，不跨会话缓存。
 
-Conda shell hook 在加载 profile 时执行，缓存到 `$env:TEMP\conda-init-cache.ps1`，仅按 `conda.exe` 修改时间失效。运行时依次探测 PATH、`CONDA_EXE` 和 Miniforge 常见安装目录，因此已有 Conda 不要求安装 `python` 组件；缓存异常时可删除该文件后重开终端。
+Conda 依次从 PATH、`CONDA_EXE` 和 Miniforge 常见安装目录探测，已有 Conda 可直接使用。每个会话首次执行 `conda` 时生成并加载官方 shell hook，随后由 Conda 模块接管命令及其自带别名。环境激活由用户显式调用，提示符仍由 profile 管理。
 
 PSReadLine 提供编辑、历史搜索与基础 Tab 绑定；PSCompletions 在顶层导入并负责默认补全；PSFzf 在首次空闲时导入，默认只注册 Ctrl+t、Ctrl+r 和 Git 选择快捷键，不接管 Tab。需要 fzf-tab 时设置 `PROFILE_FZF_TAB=1`，此时可能覆盖 PSCompletions 的补全菜单。排障见[常见问题](faq.md#tab-补全或-fzf-快捷键不符合预期)。
 
