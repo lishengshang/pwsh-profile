@@ -68,7 +68,9 @@ Invoke-Pester -Path tests\InstallFlow.Tests.ps1,tests\Repair-ConfigLinks.Tests.p
 
 安装流程应覆盖显式选择与向导选择的一致性、连续安装的状态稳定，以及 bootstrap 的成功和失败出口。链接流程应覆盖各类型的重建、缺失依赖降级、历史登记冲突、文件备份和逐项失败隔离。
 
-提交前仍须按 AGENTS.md 运行真实 profile 冒烟及 `setup.ps1 -SkipTools`，先检查本机目标和备份。冒烟只调用无副作用的功能，重启、关机、杀进程、清理分支及设置壁纸等操作仅检查命令定义或使用明确支持的预览模式。
+提交前按 AGENTS.md 验证待提交版本：在 `-NoProfile` 子进程中加载当前检出目录的 profile 入口，并在隔离环境运行 `setup.ps1 -SkipTools`。可使用上面的安装测试夹具或一次性 Windows 环境；独立 worktree 只隔离仓库文件，不会重定向 `$PROFILE`、`$HOME`、`APPDATA` 或 `LOCALAPPDATA`。不要为了验收直接向日常用户目录部署配置。
+
+冒烟只调用无副作用的功能，重启、关机、杀进程、清理分支及设置壁纸等操作仅检查命令定义或使用明确支持的预览模式。
 
 配置操作失败时验证原内容仍在、备份可读、后续目标继续处理；不能只看警告文本或退出码。CopyDirectory 的 `/MIR` 验收只在可丢弃的隔离目录运行。
 
