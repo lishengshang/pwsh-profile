@@ -123,7 +123,7 @@ setup 接管 Core 条目的旧配置时按需生成 `backup-<yyyyMMdd-HHmmss>` �
 | `PROFILE_FZF_TAB` | 启用 PSFzf 的 TabExpansion；默认由 PSCompletions 接管 Tab |
 | `PROFILE_NO_FNM` | 跳过 fnm 初始化，node/npm 等由系统 PATH 解析 |
 | `PROFILE_NO_CONDA` | 跳过 Conda shell hook 初始化，不卸载或修改既有环境 |
-| `PROFILE_KEEP_PARENT_PATH` | 保留父进程 PATH，避免丢弃 IDE、虚拟环境等注入的路径 |
+| `PROFILE_KEEP_PARENT_PATH` | 强制保留父进程 PATH，例如保留 IDE 注入的路径 |
 | `PROFILE_DEBUG` | 输出模块耗时及加载失败信息 |
 | `PWSH_PROFILE_QUIET` | 关闭 5.1 下“已安装 PowerShell 7”的兼容提示 |
 
@@ -133,7 +133,7 @@ $env:PROFILE_KEEP_PARENT_PATH = '1'
 Remove-Item Env:PROFILE_KEEP_PARENT_PATH
 ```
 
-输出重定向或无用户会话时，默认不显示问候与耗时；未重定向的 `pwsh -Command` 仍可能显示。默认启动会从 Windows 注册表重建 PATH。fnm、fzf、Yazi 等环境设置另见对应脚本；`EDITOR`、`FZF_DEFAULT_OPTS`、`YAZI_FILE_ONE` 已有设置优先保留。
+输出重定向或无用户会话时，默认不显示问候与耗时；未重定向的 `pwsh -Command` 仍可能显示。默认启动会从 Windows 注册表重建 PATH。继承已激活的 Conda 或 Python venv（包括 uv 的 `.venv`）时，profile 检查环境目录并保留父进程 PATH。fnm、fzf、Yazi 等环境设置另见对应脚本；`EDITOR`、`FZF_DEFAULT_OPTS`、`YAZI_FILE_ONE` 已有设置优先保留。
 
 ## 加载与补全边界
 

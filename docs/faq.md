@@ -113,4 +113,4 @@ Remove-Item Env:PROFILE_DEBUG
 
 重复加载是定位手段，不能当作冷启动性能数据。首次提示符、第一次智能跳转及第一次 Node 调用还会有延迟初始化，计时范围见[启动性能与交互验收](maintenance.md#启动性能与交互验收)。
 
-默认 profile 从 Windows 注册表重建 PATH，可能丢弃 IDE 或虚拟环境注入的路径。确需保留父进程 PATH 时，在加载 profile 前启用 `PROFILE_KEEP_PARENT_PATH`，再检查工具路径；不要只因一次未找到命令就重装工具。
+默认 profile 从 Windows 注册表重建 PATH。已激活的 Conda 或 Python venv（包括 uv 的 `.venv`）会保留父进程 PATH。要保留 IDE 等应用注入的路径，可以在加载 profile 前启用 `PROFILE_KEEP_PARENT_PATH`，再检查工具路径。

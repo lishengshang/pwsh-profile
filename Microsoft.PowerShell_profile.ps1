@@ -60,8 +60,10 @@ else {
 $global:__ProfileRepoDir = $_repoDir
 
 # 先从注册表重建 PATH 再探测工具——否则从 IDE/快捷方式启动时父进程 PATH 不完整，
-# 注册表里已有的工具会探测不到。PROFILE_KEEP_PARENT_PATH=1 保留父进程 PATH。
-if (-not $env:PROFILE_KEEP_PARENT_PATH) {
+# 注册表里已有的工具会探测不到。激活的 Python 环境依赖父进程注入的 PATH。
+$hasCondaEnv = $env:CONDA_PREFIX -and [System.IO.Directory]::Exists("$env:CONDA_PREFIX\conda-meta")
+$hasVirtualEnv = $env:VIRTUAL_ENV -and [System.IO.File]::Exists("$env:VIRTUAL_ENV\pyvenv.cfg")
+if (-not ($env:PROFILE_KEEP_PARENT_PATH -or $hasCondaEnv -or $hasVirtualEnv)) {
     $env:PATH = [Environment]::GetEnvironmentVariable('PATH','Machine') + ';' + [Environment]::GetEnvironmentVariable('PATH','User')
 }
 
