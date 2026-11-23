@@ -19,6 +19,16 @@ function Test-ManagedToolInstalled {
         Select-String -Pattern ([regex]::Escape($Id)) -Quiet)
 }
 
+function __Invoke-SetupNativeCommand {
+    param([string]$Command, [string[]]$Arguments)
+
+    # Windows PowerShell 5.1 会把已重定向的 stderr 变成错误流。
+    $ErrorActionPreference = 'Continue'
+    $PSNativeCommandUseErrorActionPreference = $false
+    $output = & $Command @Arguments 2>&1 | Out-String
+    [pscustomobject]@{ ExitCode = $LASTEXITCODE; Output = $output.TrimEnd() }
+}
+
 function Install-ManagedTool {
     [CmdletBinding()]
     [OutputType([bool])]
@@ -29,13 +39,15 @@ function Install-ManagedTool {
     )
     if ($Desc) { Write-Host "正在安装: $Name — $Desc（$Id）..." -ForegroundColor Cyan }
     else       { Write-Host "正在安装: $Name（$Id）..." -ForegroundColor Cyan }
-    $output = winget install --id $Id -e --silent --accept-package-agreements --accept-source-agreements 2>&1 | Out-String
-    if ($LASTEXITCODE -ne 0) {
+    $result = __Invoke-SetupNativeCommand -Command winget -Arguments @(
+        'install', '--id', $Id, '-e', '--silent', '--accept-package-agreements', '--accept-source-agreements'
+    )
+    if ($result.ExitCode -ne 0) {
         # 打印详细输出，便于定位失败原因（如源/网络问题）
         # -band 0xFFFFFFFF 把负 exit code 转成无符号十六进制（[uint32] 不接受负数）
-        $code = '0x{0:X8}' -f ($LASTEXITCODE -band 0xFFFFFFFF)
+        $code = '0x{0:X8}' -f ($result.ExitCode -band 0xFFFFFFFF)
         Write-Warning "安装失败: $Name（exit $code）"
-        $output.Trim() -split "`n" | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkGray }
+        $result.Output -split "`n" | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkGray }
         return $false
     }
     # 刚装完的工具不会自动出现在当前进程 PATH，从注册表（Machine+User）重建，

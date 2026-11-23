@@ -13,7 +13,9 @@ Describe '安装流程与用户配置保护' {
             foreach ($dir in 'Scripts', 'profile', 'nvim', 'lazygit', 'yazi') {
                 New-Item -ItemType Directory -Path (Join-Path $repo $dir) -Force | Out-Null
             }
-            Copy-Item (Join-Path $repoRoot 'setup.ps1') $repo
+            $setupText = [IO.File]::ReadAllText((Join-Path $repoRoot 'setup.ps1'))
+            $setupText = $setupText.Replace("Name = 'Starship';", "Name = 'FixtureMissingTool';")
+            [IO.File]::WriteAllText((Join-Path $repo 'setup.ps1'), $setupText, [Text.UTF8Encoding]::new($true))
             Get-ChildItem (Join-Path $repoRoot 'Scripts') -Filter '*.ps1' -File |
                 Copy-Item -Destination (Join-Path $repo 'Scripts')
             foreach ($file in 'Microsoft.PowerShell_profile.ps1', 'powershell.config.json', 'starship.toml', 'lazygit\config.yml', 'yazi\theme.toml') {
@@ -41,17 +43,31 @@ foreach ($dir in $env:LOCALAPPDATA, $env:APPDATA, $env:PWSH_TEST_HOME, (Split-Pa
     New-Item -ItemType Directory -Path $dir -Force | Out-Null
 }
 $setup = Join-Path $PSScriptRoot 'repo\setup.ps1'
-switch ($Mode) {
+$messages = & { switch ($Mode) {
     'Full' { & $setup -Full -SkipTools -Yes; & $setup -Full -SkipTools -Yes }
     'WizardFull' { $env:PWSH_TEST_COMPONENTS = 'core,completion,editor,files,gitui,python'; & $setup -Wizard -SkipTools -Yes }
     'WizardCore' { $env:PWSH_TEST_COMPONENTS = 'core'; & $setup -Wizard -SkipTools -Yes }
     'Minimal' { & $setup -Minimal -SkipTools -Yes }
+    'PartialTools' {
+        function winget {
+            $global:LASTEXITCODE = 0
+            if ($args[0] -eq 'install') { $global:LASTEXITCODE = 7 }
+        }
+        function Get-PackageProvider { [CmdletBinding()] param($Name) 'NuGet' }
+        function Get-Module { param([switch]$ListAvailable, $Name) }
+        function Install-Module {
+            [CmdletBinding()] param($Name, $Scope, [switch]$Force)
+            if ($Name -eq 'PSCompletions') { throw 'fixture failure' }
+        }
+        & $setup -Components core,completion -Yes -ExcludeTools 'eza,zoxide,ripgrep,fd,bat,7-Zip,fnm,fzf'
+    }
     default { throw 'Unknown fixture mode' }
-}
+} } 3>&1 6>&1 | Out-String
 $reg = Join-Path $env:LOCALAPPDATA 'pwsh-profile\linked-targets.json'
 [pscustomobject]@{
     Sources = @((Get-Content $reg -Raw | ConvertFrom-Json).Source | ForEach-Object { $_.Substring((Join-Path $PSScriptRoot 'repo').Length + 1) })
     Backups = @(Get-ChildItem (Split-Path $PROFILE) -Directory -Filter 'backup-*').Count
+    Messages = $messages
 } | ConvertTo-Json | Set-Content (Join-Path $PSScriptRoot 'result.json')
 '@
             [IO.File]::WriteAllText((Join-Path $caseRoot 'run.ps1'), $runner, [Text.UTF8Encoding]::new($true))
@@ -105,6 +121,15 @@ $reg = Join-Path $env:LOCALAPPDATA 'pwsh-profile\linked-targets.json'
         [IO.File]::ReadAllText($backups[0].FullName) | Should -BeExactly $original
     }
 
+    It '依赖安装部分完成时保留逐项告警并继续安装模块' {
+        $result = Invoke-SetupFixture -CaseRoot (New-SetupFixture) -Mode PartialTools
+
+        $result.Sources | Should -Contain 'Microsoft.PowerShell_profile.ps1'
+        $result.Messages | Should -Match '已安装模块: PSFzf'
+        $result.Messages | Should -Match '安装部分完成[^\r\n]*FixtureMissingTool[^\r\n]*PSCompletions'
+        $result.Messages | Should -Not -Match '安装完成。'
+    }
+
     It 'Minimal 安装保留旧 editor 登记下的新个人目录' {
         $caseRoot = New-SetupFixture
         $target = Join-Path $caseRoot 'local\nvim'
@@ -114,7 +139,8 @@ $reg = Join-Path $env:LOCALAPPDATA 'pwsh-profile\linked-targets.json'
         Set-LinkRegistryEntry -Path (Join-Path $caseRoot 'local\pwsh-profile\linked-targets.json') `
             -Target $target -Source (Join-Path $caseRoot 'repo\nvim') -LinkType Junction
 
-        $null = Invoke-SetupFixture -CaseRoot $caseRoot -Mode Minimal
+        $result = Invoke-SetupFixture -CaseRoot $caseRoot -Mode Minimal
+        $result.Messages | Should -Match '安装部分完成'
 
         (Get-Item $target -Force).LinkType | Should -BeNullOrEmpty
         Get-Content (Join-Path $target 'personal.lua') | Should -Be 'personal'
@@ -152,11 +178,11 @@ function winget { throw 'Unexpected installation attempt' }
 
         if ($Success) {
             $exitCode | Should -Be 0
-            $output | Should -Match '引导完成'
+            $output | Should -Match '安装脚本已返回'
         }
         else {
             $exitCode | Should -Not -Be 0
-            $output | Should -Not -Match '引导完成'
+            $output | Should -Not -Match '安装脚本已返回'
             $output | Should -Match '23'
         }
     }

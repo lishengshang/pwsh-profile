@@ -98,7 +98,7 @@ profile 安装目录以运行时 `$PROFILE` 为准，不假设 Documents 的固�
 
 ## 配置保护与修复
 
-链接注册表位于 `$env:LOCALAPPDATA\pwsh-profile\linked-targets.json`，记录 Target、Source、LinkType。它是本机状态，不入库。`psync` 拉取成功及 setup 部署结束后自动执行 `Scripts/Repair-ConfigLinks.ps1`。
+链接注册表位于 `$env:LOCALAPPDATA\pwsh-profile\linked-targets.json`，记录 Target、Source、LinkType。它是本机状态，不入库。`psync` 拉取成功及 setup 部署结束后自动执行 `Scripts/Repair-ConfigLinks.ps1`。setup 会汇总未能检查或修复的目标和未完成的依赖项。
 
 - 未登记目标不由 Repair 接管。已登记目标缺失或链接失效时，按原类型恢复；原类型不可用时降级为副本并更新登记。
 - 原链接被普通目录替代，或被改成指向别处的有效链接时，保留目标并告警。旧登记保留，等待用户处理冲突，重复运行不会递归删除该目录。

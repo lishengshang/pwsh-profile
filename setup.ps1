@@ -141,21 +141,34 @@ function Install-DepTools {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '',
         Justification = '循环安装多个工具，复数语义正确')]
     param()
-    $winget = Get-Command winget -ErrorAction SilentlyContinue
-    if (-not $winget) {
-        Write-Warning '未找到 winget（需要 Windows 10 1809+ 的 App Installer），跳过工具安装。'
+    $tools = @($wingetTools | Where-Object {
+        $effectiveComponents -contains $_.Component -and $_.Name -notin $ExcludeTools
+    })
+    if (-not $tools) { return }
+
+    if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
+        $missing = @($tools | Where-Object { -not (Get-Command $_.Name -ErrorAction SilentlyContinue) })
+        if ($missing) {
+            Write-Warning '未找到 winget（需要 Windows 10 1809+ 的 App Installer），无法安装或核对缺失的工具。'
+            $missing.Name
+        }
         return
     }
 
-    foreach ($tool in @($wingetTools | Where-Object {
-                $effectiveComponents -contains $_.Component -and $_.Name -notin $ExcludeTools
-            })) {
-        # 幂等：已安装则跳过（探测逻辑单源在 Scripts/ToolInstall.ps1）
-        if (Test-ManagedToolInstalled -Name $tool.Name -Id $tool.Id) {
-            Write-Host "已安装: $($tool.Name)" -ForegroundColor DarkGray
-            continue
+    foreach ($tool in $tools) {
+        try {
+            if (Test-ManagedToolInstalled -Name $tool.Name -Id $tool.Id) {
+                Write-Host "已安装: $($tool.Name)" -ForegroundColor DarkGray
+                continue
+            }
+            if (-not (Install-ManagedTool -Name $tool.Name -Id $tool.Id -Desc $tool.Desc)) {
+                $tool.Name
+            }
         }
-        $null = Install-ManagedTool -Name $tool.Name -Id $tool.Id -Desc $tool.Desc
+        catch {
+            Write-Warning "工具安装失败（$($tool.Name)）: $($_.Exception.Message)"
+            $tool.Name
+        }
     }
 }
 
@@ -169,13 +182,15 @@ function Initialize-LazyVim {
     }
     if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
         Write-Warning '未找到 git，跳过 LazyVim starter 引入。'
-        return
+        return 'LazyVim starter'
     }
     Write-Host '正在引入 LazyVim starter 到 nvim/ ...' -ForegroundColor Cyan
-    git clone --depth 1 https://github.com/LazyVim/starter $nvimDir 2>&1 | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-        Write-Warning 'LazyVim starter 克隆失败（网络问题？）。可稍后手动: git clone https://github.com/LazyVim/starter nvim'
-        return
+    $result = __Invoke-SetupNativeCommand -Command git -Arguments @(
+        'clone', '--depth', '1', 'https://github.com/LazyVim/starter', $nvimDir
+    )
+    if ($result.ExitCode -ne 0) {
+        Write-Warning "LazyVim starter 克隆失败（exit $($result.ExitCode)）: $($result.Output)"
+        return 'LazyVim starter'
     }
     Remove-Item -Path (Join-Path $nvimDir '.git') -Recurse -Force
     # starter 默认忽略 lazy-lock.json；多设备插件版本一致必须跟踪它
@@ -193,7 +208,7 @@ function Install-YaziFlavor {
     $env:PATH = [Environment]::GetEnvironmentVariable('PATH','Machine') + ';' + [Environment]::GetEnvironmentVariable('PATH','User')
     if (-not (Get-Command ya -ErrorAction SilentlyContinue)) {
         Write-Warning '未找到 ya（yazi CLI），跳过 Solarized flavor 安装，可稍后手动: ya pkg add peterfication/solarized'
-        return
+        return 'Yazi Solarized flavor'
     }
     $flavorDir = Join-Path $env:APPDATA 'yazi\config\flavors'
     if ((Test-Path $flavorDir) -and (Get-ChildItem $flavorDir -Filter '*solarized*' -ErrorAction SilentlyContinue)) {
@@ -201,8 +216,12 @@ function Install-YaziFlavor {
         return
     }
     Write-Host '正在安装 yazi Solarized flavor ...' -ForegroundColor Cyan
-    $output = ya pkg add peterfication/solarized 2>&1 | Out-String
-    Write-Host $output.TrimEnd() -ForegroundColor DarkGray
+    $result = __Invoke-SetupNativeCommand -Command ya -Arguments @('pkg', 'add', 'peterfication/solarized')
+    Write-Host $result.Output -ForegroundColor DarkGray
+    if ($result.ExitCode -ne 0) {
+        Write-Warning "Yazi Solarized flavor 安装失败（exit $($result.ExitCode)）。"
+        return 'Yazi Solarized flavor'
+    }
 }
 
 function Install-PwshModules {
@@ -210,13 +229,6 @@ function Install-PwshModules {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '',
         Justification = '循环安装多个模块，复数语义正确')]
     param()
-    # 5.1 默认 TLS 协议连不上 PSGallery，强制 TLS 1.2（PS7 默认已含，无副作用）
-    [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
-    # NuGet provider 缺失时自动装（否则 Install-Module 会交互式询问）
-    if (-not (Get-PackageProvider -Name NuGet -ErrorAction SilentlyContinue)) {
-        Install-PackageProvider -Name NuGet -Force -Scope CurrentUser | Out-Null
-    }
-
     # 从唯一事实来源（$componentModules）按所选组件推导，与向导展示同源
     $wanted = @(
         $componentModules.Keys | Where-Object { $effectiveComponents -contains $_ } |
@@ -228,12 +240,25 @@ function Install-PwshModules {
         return
     }
     try {
-        Install-Module -Name $need -Scope CurrentUser -Force -ErrorAction Stop
-        Write-Host "已安装模块: $($need -join ', ')" -ForegroundColor Green
+        # 5.1 默认 TLS 协议连不上 PSGallery，缺少 NuGet 时 Install-Module 会询问。
+        [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+        if (-not (Get-PackageProvider -Name NuGet -ErrorAction SilentlyContinue)) {
+            Install-PackageProvider -Name NuGet -Force -Scope CurrentUser -ErrorAction Stop | Out-Null
+        }
     }
     catch {
-        Write-Warning "模块安装失败: $_"
-        Write-Host '可稍后手动执行: Install-Module PSCompletions, PSFzf -Scope CurrentUser'
+        Write-Warning "模块安装准备失败: $($_.Exception.Message)"
+        return $need
+    }
+    foreach ($module in $need) {
+        try {
+            $null = Install-Module -Name $module -Scope CurrentUser -Force -ErrorAction Stop
+            Write-Host "已安装模块: $module" -ForegroundColor Green
+        }
+        catch {
+            Write-Warning "模块安装失败（$module）: $($_.Exception.Message)"
+            $module
+        }
     }
 }
 
@@ -249,7 +274,14 @@ if ($repoDir -ieq $profileDir) {
 $null = Restore-LinkRegistry -Path $__RegistryPath -Manifest $linkManifest -RepoDir $repoDir
 
 # 链接必须在 Initialize-LazyVim 之后建立（nvim/ 目录要先存在）；仅 editor 组件引入
-if ($effectiveComponents -contains 'editor') { Initialize-LazyVim }
+$pending = @()
+if ($effectiveComponents -contains 'editor') {
+    try { $pending += @(Initialize-LazyVim) }
+    catch {
+        Write-Warning "LazyVim starter 准备失败: $($_.Exception.Message)"
+        $pending += 'LazyVim starter'
+    }
+}
 
 # 部署循环单源在 Scripts/Deploy-ConfigLinks.ps1（符号链接探测、备份接管、
 # Junction/HardLink/Copy 回退链与注册表登记），供 Pester 直接测试
@@ -260,18 +292,31 @@ $backupCreated = $deploy.BackupCreated
 $copyDeployed  = $deploy.CopyDeployed
 $backupDir     = $deploy.BackupDir
 
-# 修复历史断链（幂等；对已完好的链接无操作）
-& (Join-Path $repoDir 'Scripts\Repair-ConfigLinks.ps1')
+# 修复历史断链失败时，余下可独立完成的步骤继续进行。
+try {
+    $repair = & (Join-Path $repoDir 'Scripts\Repair-ConfigLinks.ps1') -PassThru
+    if ($null -eq $repair) { throw '未取得链接修复结果。' }
+    if ($repair.Unresolved.Count) { $pending += "已登记配置目标（$($repair.Unresolved.Count) 项）" }
+}
+catch {
+    Write-Warning "未能检查配置链接: $($_.Exception.Message)"
+    $pending += '配置链接检查'
+}
 
 # ================= 工具 / 模块安装 =================
 if ($SkipTools) {
     Write-Host '已跳过工具与模块安装（-SkipTools）。' -ForegroundColor DarkGray
 }
 else {
-    Install-DepTools
-    if ($effectiveComponents -contains 'files') { Install-YaziFlavor }
-    Install-PwshModules
-    Write-Host "`n依赖安装完成。请重新打开终端让 winget 注入的 PATH 生效。" -ForegroundColor Cyan
+    $pending += @(Install-DepTools)
+    if ($effectiveComponents -contains 'files') {
+        try { $pending += @(Install-YaziFlavor) }
+        catch {
+            Write-Warning "Yazi Solarized flavor 安装失败: $($_.Exception.Message)"
+            $pending += 'Yazi Solarized flavor'
+        }
+    }
+    $pending += @(Install-PwshModules)
 }
 
 # ================= 5.1 执行策略 =================
@@ -287,7 +332,13 @@ if ($PSVersionTable.PSVersion.Major -lt 7) {
     }
 }
 
-Write-Host "`n安装完成。请重新打开 PowerShell 或执行 `. `$PROFILE` 加载配置。" -ForegroundColor Cyan
+if ($pending.Count) {
+    Write-Warning "安装部分完成，以下项目仍待处理: $($pending -join '、')"
+}
+else {
+    Write-Host "`n安装完成。" -ForegroundColor Cyan
+}
+Write-Host '请重新打开 PowerShell 加载已部署的配置与工具路径。' -ForegroundColor Cyan
 if ($copyDeployed) {
     Write-Warning '部分条目以复制模式部署（无符号链接/硬链接权限）：不实时同步，但 psync / 重跑 setup 会自动镜像刷新。'
 }

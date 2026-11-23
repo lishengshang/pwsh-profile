@@ -130,15 +130,30 @@ function psync {
         return
     }
     & $global:__Tools['git'].Source -C $repo pull --rebase @args
-    if ($LASTEXITCODE -eq 0) {
-        # git 的原子写入会替换仓库文件 inode、弄断文件类硬链接，拉取后自动修复
+    $gitExitCode = $LASTEXITCODE
+    if ($gitExitCode -ne 0) {
+        Write-Host "git pull 失败（exit $gitExitCode）：请检查冲突/网络后重试，或到 $repo 手动处理。" -ForegroundColor Yellow
+        return
+    }
+
+    # git 的原子写入会替换仓库文件 inode、弄断文件类硬链接，拉取后自动修复
+    try {
         $repair = Join-Path $repo 'Scripts\Repair-ConfigLinks.ps1'
-        if (Test-Path $repair) { & $repair }
-        Write-Host '配置已同步。重开终端生效；nvim 配置有变时重开 nvim 自动安装插件。' -ForegroundColor Cyan
+        $result = & $repair -PassThru -ErrorAction Stop
+        if ($null -eq $result) { throw '未取得链接修复结果。' }
     }
-    else {
-        Write-Host "git pull 失败（exit $LASTEXITCODE）：请检查冲突/网络后重试，或到 $repo 手动处理。" -ForegroundColor Yellow
+    catch {
+        Write-Warning "Git 已同步，未能检查配置链接: $($_.Exception.Message)"
+        return
     }
+    finally {
+        $global:LASTEXITCODE = $gitExitCode
+    }
+    if ($result.Unresolved.Count) {
+        Write-Warning "Git 已同步，仍有 $($result.Unresolved.Count) 个配置目标待处理。请查看上方警告。"
+        return
+    }
+    Write-Host '配置已同步。重开终端生效；nvim 配置有变时重开 nvim 自动安装插件。' -ForegroundColor Cyan
 }
 
 # ==============================================================

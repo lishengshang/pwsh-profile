@@ -162,9 +162,4 @@ else {
 if ($LASTEXITCODE -ne 0) {
     throw "setup.ps1 安装失败（exit $LASTEXITCODE）。请处理上方错误后重新运行引导。"
 }
-if ($pwshPath) {
-    Write-Host "`n引导完成。请关闭本窗口，打开 Windows Terminal 或新的 PowerShell 7 窗口。" -ForegroundColor Cyan
-}
-else {
-    Write-Host "`n引导完成。打开新的 PowerShell 窗口即可使用（兼容模式；随时可补装 PowerShell 7 获得完整体验）。" -ForegroundColor Cyan
-}
+Write-Host "`n安装脚本已返回，安装状态见上方输出。" -ForegroundColor Cyan
