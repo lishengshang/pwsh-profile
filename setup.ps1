@@ -71,23 +71,23 @@ $wingetTools = @(
     @{ Name = 'Starship';   Id = 'Starship.Starship';               Component = 'core'; Desc = '提示符主题' }
     @{ Name = 'eza';        Id = 'eza-community.eza';               Component = 'core'; Desc = '文件列表（图标 + git 状态）' }
     @{ Name = 'zoxide';     Id = 'ajeetdsouza.zoxide';              Component = 'core'; Desc = '智能目录跳转（z）' }
-    @{ Name = 'ripgrep';    Id = 'BurntSushi.ripgrep.MSVC';         Component = 'core'; Desc = '内容搜索（grep）' }
+    @{ Name = 'ripgrep';    CommandName = 'rg'; Id = 'BurntSushi.ripgrep.MSVC';         Component = 'core'; Desc = '内容搜索（grep）' }
     @{ Name = 'fd';         Id = 'sharkdp.fd';                      Component = 'core'; Desc = '文件查找（find）' }
     @{ Name = 'bat';        Id = 'sharkdp.bat';                     Component = 'core'; Desc = '文件高亮查看（cat）' }
-    @{ Name = '7-Zip';      Id = '7zip.7zip';                       Component = 'core'; Desc = '解压（unzip）' }
+    @{ Name = '7-Zip';      CommandName = '7z'; Id = '7zip.7zip';                       Component = 'core'; Desc = '解压（unzip）' }
     @{ Name = 'fnm';        Id = 'Schniz.fnm';                      Component = 'core'; Desc = 'Node.js 版本管理'; Optional = $true }
     @{ Name = 'fzf';        Id = 'junegunn.fzf';                    Component = 'completion'; Desc = '模糊查找（Ctrl+t 文件 / Ctrl+r 历史）' }
-    @{ Name = 'Neovim';     Id = 'Neovim.Neovim';                   Component = 'editor'; Desc = '终端编辑器（LazyVim 基座）' }
+    @{ Name = 'Neovim';     CommandName = 'nvim'; Id = 'Neovim.Neovim';                   Component = 'editor'; Desc = '终端编辑器（LazyVim 基座）' }
     # Yazi 及其预览依赖
     @{ Name = 'Yazi';        Id = 'sxyazi.yazi';                    Component = 'files'; Desc = '终端文件管理器（y）' }
     @{ Name = 'ffmpeg';      Id = 'Gyan.FFmpeg';                    Component = 'files'; Desc = 'yazi 视频缩略图'; Optional = $true }
     @{ Name = 'jq';          Id = 'jqlang.jq';                      Component = 'files'; Desc = 'yazi JSON 预览'; Optional = $true }
-    @{ Name = 'poppler';     Id = 'oschwartz10612.Poppler';         Component = 'files'; Desc = 'yazi PDF 预览'; Optional = $true }
-    @{ Name = 'ImageMagick'; Id = 'ImageMagick.ImageMagick';        Component = 'files'; Desc = 'yazi 字体/HEIC 预览'; Optional = $true }
+    @{ Name = 'poppler';     CommandName = 'pdftoppm'; Id = 'oschwartz10612.Poppler';         Component = 'files'; Desc = 'yazi PDF 预览'; Optional = $true }
+    @{ Name = 'ImageMagick'; CommandName = 'magick'; Id = 'ImageMagick.ImageMagick';        Component = 'files'; Desc = 'yazi 字体/HEIC 预览'; Optional = $true }
     # lazygit（终端 git UI）与 LazyVim 的 treesitter 编译器
     @{ Name = 'lazygit';     Id = 'JesseDuffield.lazygit';          Component = 'gitui'; Desc = '终端 Git UI（lg）' }
-    @{ Name = 'WinLibs gcc'; Id = 'BrechtSanders.WinLibs.POSIX.UCRT'; Component = 'editor'; Desc = 'treesitter 编译器（Neovim 需要）' }
-    @{ Name = 'Miniforge';   Id = 'CondaForge.Miniforge3';          Component = 'python'; Desc = 'Python 与 Conda 环境管理'; Optional = $true }
+    @{ Name = 'WinLibs gcc'; CommandName = 'gcc'; Id = 'BrechtSanders.WinLibs.POSIX.UCRT'; Component = 'editor'; Desc = 'treesitter 编译器（Neovim 需要）' }
+    @{ Name = 'Miniforge';   CommandName = 'conda'; Id = 'CondaForge.Miniforge3';          Component = 'python'; Desc = 'Python 与 Conda 环境管理'; Optional = $true }
 )
 # 防呆：缺 Component 标注（或值非法）的条目会被组件过滤静默跳过、永不安装，
 # 提前显式告警，避免"加了工具却怎么都装不上"的排查成本
@@ -147,7 +147,9 @@ function Install-DepTools {
     if (-not $tools) { return }
 
     if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
-        $missing = @($tools | Where-Object { -not (Get-Command $_.Name -ErrorAction SilentlyContinue) })
+        $missing = @($tools | Where-Object {
+            -not (Test-ManagedToolInstalled -Name $_.Name -Id $_.Id -CommandName $_.CommandName -PathOnly)
+        })
         if ($missing) {
             Write-Warning '未找到 winget（需要 Windows 10 1809+ 的 App Installer），无法安装或核对缺失的工具。'
             $missing.Name
@@ -157,7 +159,7 @@ function Install-DepTools {
 
     foreach ($tool in $tools) {
         try {
-            if (Test-ManagedToolInstalled -Name $tool.Name -Id $tool.Id) {
+            if (Test-ManagedToolInstalled -Name $tool.Name -Id $tool.Id -CommandName $tool.CommandName) {
                 Write-Host "已安装: $($tool.Name)" -ForegroundColor DarkGray
                 continue
             }

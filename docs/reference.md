@@ -71,7 +71,7 @@ PowerShell 7+ 提供完整体验；Windows PowerShell 5.1 提供兼容模式。G
 | PSCompletions（`Install-Module`） | completion | 命令补全 | `psc` 提示安装或重开终端 |
 | PSFzf（`Install-Module`） | completion | fzf 交互集成 | 对应快捷键不可用 |
 
-`7z` 按 PATH 中实际可执行文件探测，可以来自 NanaZip 等兼容实现；安装清单中的 7-Zip 是新机器的默认安装选项。Git、VS Code 等仍可由用户自行安装。
+`7z` 按 PATH 中实际可执行文件探测，可以来自 NanaZip 等兼容实现；安装清单中的 7-Zip 是新机器的默认安装选项。 安装器先按实际可执行命令检查 PATH，再按包 ID 查询 WinGet 登记。Git、VS Code 等仍可由用户自行安装。
 
 ## 配置路径与链接模式
 
