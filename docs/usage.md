@@ -72,6 +72,10 @@ Git 命令需要已安装 Git。`gquick` 会暂存未跟踪文件，执行前先
 
 `EDITOR` 含空格的可执行路径需用双引号包裹；复杂的参数引用建议放进独立 wrapper 脚本。wallpaper 参数以 `Get-Help .\Scripts\wallpaper.ps1 -Detailed` 为准。Tab 的组件关系与关闭开关见[补全边界](reference.md#加载与补全边界)。
 
+## Node.js 环境
+
+安装 fnm 后，可以直接运行 `fnm use <版本>` 初始化并切换当前终端的 Node.js 版本。显式选择在当前目录保留。切换到有版本声明的项目目录后，首次运行 `node`、`npm`、`npx`、`corepack` 或 `fnm current` 时会按该项目选择版本。
+
 ## Python 环境
 
 | 命令 | 说明 |
