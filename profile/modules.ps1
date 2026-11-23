@@ -1,16 +1,15 @@
 ﻿# ==============================================================
-# 模块加载（zoxide 懒加载；PSCompletions 顶层同步导入；PSFzf 走 OnIdle 懒加载）
+# 模块加载（zoxide 跳转与目录记录；PSCompletions 顶层同步导入；PSFzf 走 OnIdle 懒加载）
 # ==============================================================
 
-# zoxide：init 输出全是 global: 函数 + 全局别名，可安全 dot-source，
-# 故把生成与加载都延迟到首次 z/zi 调用（有一次性开销，之后命中缓存）。
+# z/zi 仍依赖上游别名，但目录记录独立启用，避免上游覆盖当前提示符。
 if ($global:__Tools.ContainsKey('zoxide')) {
     $script:__zoxideCache = "$env:TEMP\zoxide-init-cache.ps1"
     $script:__zoxideReady = $false
     function __Ensure-Zoxide {
         if ($script:__zoxideReady) { return }
         $script:__zoxideReady = $true
-        $init = __Get-CachedInitScript -Command 'zoxide' -CacheFile $script:__zoxideCache -Arguments @('init', 'powershell')
+        $init = __Get-CachedInitScript -Command 'zoxide' -CacheFile $script:__zoxideCache -Arguments @('init', 'powershell', '--hook', 'none')
         if ($null -ne $init) { . $init }
     }
     # 占位函数：首次调用触发加载。zoxide init 成功时会注册全局别名 z/zi
@@ -27,6 +26,74 @@ if ($global:__Tools.ContainsKey('zoxide')) {
     }
     function z  { __Invoke-ZoxidePlaceholder -Name 'z' @args }
     function zi { __Invoke-ZoxidePlaceholder -Name 'zi' @args }
+}
+
+# PowerShell 7 用位置回调覆盖 cmdlet、跳转命令和目录栈，5.1 在绘制提示符时检测。
+function __Enable-ZoxideHistory {
+    param([switch]$DefaultPrompt)
+
+    $commands = $ExecutionContext.InvokeCommand
+    if ($commands.PSObject.Properties['LocationChangedAction']) {
+        $previousAction = Get-Variable __zoxideLocationAction -Scope Script -ValueOnly -ErrorAction Ignore
+        $script:__zoxideLocationAction = [EventHandler[System.Management.Automation.LocationChangedEventArgs]] {
+            $change = $args[1]
+
+            if ($change.NewPath.Provider.Name -eq 'FileSystem' -and
+                ($change.OldPath.Provider.Name -ne 'FileSystem' -or $change.NewPath.ProviderPath -ne $change.OldPath.ProviderPath)) {
+                __Add-ZoxideLocation -Path $change.NewPath.ProviderPath
+            }
+        }
+        $otherActions = [Delegate]::Remove($commands.LocationChangedAction, $previousAction)
+        $commands.LocationChangedAction = [Delegate]::Combine($otherActions, $script:__zoxideLocationAction)
+        return
+    }
+
+    $script:__zoxidePromptLocation = if ($PWD.Provider.Name -eq 'FileSystem') { $PWD.ProviderPath }
+    if ($DefaultPrompt) {
+        function global:prompt {
+            __Update-ZoxidePromptLocation
+            'PS> '
+        }
+        return
+    }
+
+    # Starship 会在调用预提示符函数前捕获状态，无需包裹它的 prompt。
+    $preCommand = Get-Item -LiteralPath Function:\Invoke-Starship-PreCommand -ErrorAction Ignore
+    $registered = Get-Variable __zoxidePreCommand -Scope Script -ValueOnly -ErrorAction Ignore
+    if ($preCommand -and [object]::ReferenceEquals($preCommand.ScriptBlock, $registered)) { return }
+    $script:__zoxidePriorPreCommand = if ($preCommand) { $preCommand.ScriptBlock }
+    function global:Invoke-Starship-PreCommand {
+        try {
+            if ($script:__zoxidePriorPreCommand) { & $script:__zoxidePriorPreCommand }
+        }
+        finally {
+            __Update-ZoxidePromptLocation
+        }
+    }
+    $script:__zoxidePreCommand = (Get-Item -LiteralPath Function:\Invoke-Starship-PreCommand).ScriptBlock
+}
+
+function __Update-ZoxidePromptLocation {
+    $path = if ($PWD.Provider.Name -eq 'FileSystem') { $PWD.ProviderPath }
+    if ($path -and $path -ne $script:__zoxidePromptLocation) { __Add-ZoxideLocation -Path $path }
+    $script:__zoxidePromptLocation = $path
+}
+
+function __Add-ZoxideLocation {
+    param([string]$Path)
+
+    $tool = $global:__Tools['zoxide']
+    if (-not $tool) { return }
+    $previousExitCode = Get-Variable LASTEXITCODE -Scope Global -ValueOnly -ErrorAction Ignore
+    try {
+        $null = & $tool.Source add -- $Path 2>$null
+    }
+    catch {
+        Write-Debug "zoxide 目录记录失败：$_"
+    }
+    finally {
+        $global:LASTEXITCODE = $previousExitCode
+    }
 }
 
 # psc 兜底：模块正常加载时别名 psc 优先，本函数不参与；只在模块缺失时给指引。
