@@ -70,7 +70,20 @@ if ($global:__Tools.ContainsKey('fnm') -and -not $env:PROFILE_NO_FNM) {
     }
 
     function fnm {
-        $subcommand = if ($args.Count) { $args[0] }
+        $commandIndex = 0
+        $optionsWithValue = '--node-dist-mirror', '--fnm-dir', '--log-level', '--arch', '--version-file-strategy'
+        # 仅识别子命令的位置，原始参数仍由 fnm 完整解析。
+        while ($commandIndex -lt $args.Count -and $args[$commandIndex] -clike '--*') {
+            $option = $args[$commandIndex]
+            if ($option -cin '--', '--help', '--version') { break }
+            $commandIndex++
+            if ($option -cin $optionsWithValue -or
+                ($option -ceq '--resolve-engines' -and $commandIndex -lt $args.Count -and
+                    $args[$commandIndex] -cin 'true', 'false')) {
+                $commandIndex++
+            }
+        }
+        $subcommand = if ($commandIndex -lt $args.Count) { $args[$commandIndex] }
         $installsVersion = $subcommand -in 'install', 'i'
         $activatesVersion = $subcommand -eq 'use' -or ($installsVersion -and '--use' -in $args)
         if ($activatesVersion -or $subcommand -eq 'current') {
