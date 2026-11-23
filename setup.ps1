@@ -182,6 +182,10 @@ function Initialize-LazyVim {
         Write-Host '已存在: nvim/（LazyVim 配置）' -ForegroundColor DarkGray
         return
     }
+    if ($SkipTools) {
+        Write-Warning '未找到 nvim/ 配置，已按 -SkipTools 跳过 LazyVim starter 下载。'
+        return 'LazyVim starter'
+    }
     if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
         Write-Warning '未找到 git，跳过 LazyVim starter 引入。'
         return 'LazyVim starter'
@@ -307,7 +311,7 @@ catch {
 
 # ================= 工具 / 模块安装 =================
 if ($SkipTools) {
-    Write-Host '已跳过工具与模块安装（-SkipTools）。' -ForegroundColor DarkGray
+    Write-Host '已跳过工具、模块和外部资源下载（-SkipTools）。' -ForegroundColor DarkGray
 }
 else {
     $pending += @(Install-DepTools)

@@ -48,6 +48,13 @@ $messages = & { switch ($Mode) {
     'WizardFull' { $env:PWSH_TEST_COMPONENTS = 'core,completion,editor,files,gitui,python'; & $setup -Wizard -SkipTools -Yes }
     'WizardCore' { $env:PWSH_TEST_COMPONENTS = 'core'; & $setup -Wizard -SkipTools -Yes }
     'Minimal' { & $setup -Minimal -SkipTools -Yes }
+    'MissingNvim' {
+        function git {
+            Set-Content -LiteralPath (Join-Path $PSScriptRoot 'git-attempted') -Value 'attempted'
+            $global:LASTEXITCODE = 41
+        }
+        & $setup -Full -SkipTools -Yes
+    }
     'PartialTools' {
         function winget {
             $global:LASTEXITCODE = 0
@@ -92,6 +99,19 @@ $reg = Join-Path $env:LOCALAPPDATA 'pwsh-profile\linked-targets.json'
         $explicit.Sources | Should -Contain 'yazi\theme.toml'
         @($wizard.Sources | Sort-Object) | Should -Be @($explicit.Sources | Sort-Object)
         $explicit.Backups | Should -Be 0
+    }
+
+    It '缺失 nvim 时 SkipTools 提示并继续部署其余配置' {
+        $caseRoot = New-SetupFixture
+        [IO.Directory]::Delete((Join-Path $caseRoot 'repo\nvim'))
+
+        $result = Invoke-SetupFixture -CaseRoot $caseRoot -Mode MissingNvim
+
+        Test-Path -LiteralPath (Join-Path $caseRoot 'git-attempted') | Should -BeFalse
+        $result.Sources | Should -Contain 'Microsoft.PowerShell_profile.ps1'
+        $result.Sources | Should -Not -Contain 'nvim'
+        $result.Messages | Should -Match '未找到 nvim/ 配置'
+        $result.Messages | Should -Match '安装部分完成[^\r\n]*LazyVim starter'
     }
 
     It '向导仅选 core 不部署其他组件的配置' {
