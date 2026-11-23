@@ -1,33 +1,18 @@
 ﻿# ==============================================================
 # Starship 懒加载
 # ==============================================================
-# 缓存 starship 完整 init 脚本（--print-full-init），dot-source 零进程调用；
-# 生成延迟到首次 prompt（7 天 TTL + starship 升级即失效，见 init-cache.ps1）。
-# v2 文件名：v1 缓存的是引导行，dot-source 时还要再起一次 starship 进程。
-$global:__starshipCache = "$env:TEMP\starship-init-cache-v2.ps1"
-$script:__starshipReady = $false
 
 function prompt {
-    # starship init 输出必须 eval（官方安装方式）；占位覆盖是懒加载设计本身
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingInvokeExpression', '',
-        Justification = 'starship init 输出是完整 init 脚本，官方指定 eval 安装')]
-    param()
-    if (-not $script:__starshipReady) {
-        $script:__starshipReady = $true
-        $null = Initialize-CachedInit -Command 'starship' -CacheFile $global:__starshipCache -Arguments @('init','powershell','--print-full-init')
-    }
+    # Starship 完整脚本会替换当前占位符，调用方执行缓存助手解析的同一份代码。
     Remove-Item Function:\prompt -ErrorAction SilentlyContinue
-    if (Test-Path $global:__starshipCache) {
-        . $global:__starshipCache
-    } elseif ($global:__Tools.ContainsKey('starship')) {
-        # 缓存首次生成失败且无旧缓存的兜底，同样走 init（starship init 输出必须
-        # eval，官方安装方式——iex 为必要用法）；用完整路径调用，与 init-cache.ps1
-        # 的 PATH 无关性约定一致
-        Invoke-Expression (& $global:__Tools['starship'].Source init powershell --print-full-init | Out-String)
+    try {
+        $init = __Get-CachedInitScript -Command 'starship' -CacheFile "$env:TEMP\starship-init-cache-v2.ps1" -Arguments @('init', 'powershell', '--print-full-init')
+        if ($null -ne $init) { . $init }
     }
-    # 兜底：上面两条路都没定义新 prompt 时重建一个默认值，否则调用 prompt 会
-    # CommandNotFoundException。必须 global: 限定——函数体内的普通 function
-    # 定义只存活于本次调用
+    catch {
+        Write-Debug "Starship 初始化失败：$_"
+    }
+
     if (-not (Get-Command prompt -ErrorAction SilentlyContinue)) {
         function global:prompt { 'PS> ' }
     }
