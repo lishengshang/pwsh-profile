@@ -102,30 +102,83 @@ function __Invoke-WithLinkRegistryLock {
     }
 }
 
-# 内部：fsutil 判断两个路径是否指向同一 inode（硬链接）。fsutil 输出的路径不带
-# 盘符，两侧统一「去盘符 + 去尾分隔符 + 降大小写」后比对。源路径用 GetFullPath
-# 而非 Get-Item——后者在源文件已不存在时会报错，而这里只需要字面路径。
-# fsutil 不可用（非 NTFS、权限、目标不存在）时返回 $false，由调用方走降级分支。
+function __Get-ManagedFileIdentity {
+    param([Parameter(Mandatory)][string]$Path)
+
+    try {
+        # 只打开叶节点本身，以免把指向源的符号链接误判成硬链接。
+        if (-not ('PwshProfile.FileIdentity' -as [type])) {
+            Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+using Microsoft.Win32.SafeHandles;
+
+namespace PwshProfile
+{
+    public static class FileIdentity
+    {
+        [StructLayout(LayoutKind.Sequential)]
+        private struct FileIdInfo
+        {
+            public ulong Volume;
+            public ulong Part1;
+            public ulong Part2;
+        }
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
+        private static extern SafeFileHandle CreateFileW(
+            string path, uint access, uint share, IntPtr security,
+            uint disposition, uint flags, IntPtr template);
+
+        [DllImport("kernel32.dll", ExactSpelling = true)]
+        private static extern bool GetFileInformationByHandleEx(
+            SafeFileHandle file, int infoClass, out FileIdInfo info, uint size);
+
+        public static string Read(string path)
+        {
+            const uint ReadAttributes = 0x80;
+            const uint ShareReadWriteDelete = 7;
+            const uint OpenExisting = 3;
+            const uint OpenReparsePoint = 0x00200000;
+            const int FileIdInformation = 18;
+            using (var file = CreateFileW(path, ReadAttributes, ShareReadWriteDelete,
+                IntPtr.Zero, OpenExisting, OpenReparsePoint, IntPtr.Zero))
+            {
+                FileIdInfo info;
+                if (file.IsInvalid ||
+                    !GetFileInformationByHandleEx(file, FileIdInformation, out info, (uint)Marshal.SizeOf(typeof(FileIdInfo))) ||
+                    (info.Part1 == 0 && info.Part2 == 0))
+                {
+                    return null;
+                }
+                return info.Volume.ToString("X16") + info.Part1.ToString("X16") + info.Part2.ToString("X16");
+            }
+        }
+    }
+}
+'@ -ErrorAction Stop
+        }
+        $filePath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path)
+        [PwshProfile.FileIdentity]::Read($filePath)
+    }
+    catch {
+        Write-Debug "无法读取文件标识：$_"
+    }
+}
+
 function __Test-IsHardLinkOf {
     param(
         [Parameter(Mandatory)][string]$Src,
         [Parameter(Mandatory)][string]$Target
     )
-    $srcFull = __Get-NormalizedFullPath $Src
-    $srcNorm = ($srcFull -replace '^[A-Za-z]:', '').ToLowerInvariant()
-    $links = @()
-    try {
-        $links = @(fsutil hardlink list $Target 2>$null) |
-            ForEach-Object { (($_ -replace '^[A-Za-z]:', '').TrimEnd('\')).ToLowerInvariant() }
-    }
-    catch {
-        $links = @()   # 按「无硬链接证据」处理
-    }
-    return ($links -contains $srcNorm)
+
+    $sourceIdentity = __Get-ManagedFileIdentity -Path $Src
+    if (-not $sourceIdentity) { return $false }
+    return ($sourceIdentity -ceq (__Get-ManagedFileIdentity -Path $Target))
 }
 
 # 内部：按磁盘状态严格认领受管链接类型——只认有证据的 SymbolicLink/Junction
-# （且指向仓库源）与 HardLink（fsutil 同 inode）；普通文件/目录返回 $null 不认领
+# （且指向仓库源）与 HardLink（卷序列号和文件 ID 相同）；普通文件/目录返回 $null 不认领
 # （内容相同 ≠ 受本项目管理），交给 setup 下次部署按「未登记」重新接管。
 function __Get-ManagedLinkTypeFromDisk {
     param(
@@ -265,7 +318,7 @@ function Get-ManagedLinkState {
         [Parameter(Mandatory)][string]$RegistryPath
     )
     # 磁盘证据优先，判定单源在 __Get-ManagedLinkTypeFromDisk（符号链接指向仓库源、
-    # fsutil 同 inode）
+    # 卷序列号和文件 ID 相同）
     $diskType = __Get-ManagedLinkTypeFromDisk -Src $Src -Target $Target
     if ($diskType) { return @{ IsManaged = $true; LinkType = $diskType } }
     $tgt = Get-Item -LiteralPath $Target -Force -ErrorAction SilentlyContinue

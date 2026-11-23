@@ -250,13 +250,11 @@ Describe '__Test-IsHardLinkOf' {
         Remove-Item $root -Recurse -Force -ErrorAction SilentlyContinue
     }
 
-    It '同一 inode 的两个路径判定为硬链接' {
+    It '同一文件标识的两个路径判定为硬链接' {
         __Test-IsHardLinkOf -Src $srcFile -Target $linkFile | Should -BeTrue
     }
 
     It '源路径盘符大小写不同仍判定为硬链接' {
-        # fsutil 输出的大小写来自文件系统，源侧只做字面归一（GetFullPath 不改大小写），
-        # 所以比对必须降大小写
         $altCase = $srcFile.Substring(0, 1).ToLowerInvariant() + $srcFile.Substring(1)
         __Test-IsHardLinkOf -Src $altCase -Target $linkFile | Should -BeTrue
     }
@@ -265,6 +263,14 @@ Describe '__Test-IsHardLinkOf' {
         $copy = Join-Path $root 'copy.txt'
         Copy-Item -Path $srcFile -Destination $copy -Force
         __Test-IsHardLinkOf -Src $copy -Target $linkFile | Should -BeFalse
+    }
+
+    It '不同卷内文件 ID 恰好相同也不能判定为硬链接' {
+        Mock __Get-ManagedFileIdentity {
+            if ($Path -like 'C:*') { '000000000000000100000000000000110000000000000022' }
+            else { '000000000000000200000000000000110000000000000022' }
+        }
+        __Test-IsHardLinkOf -Src 'C:\fixture\same.txt' -Target 'D:\fixture\same.txt' | Should -BeFalse
     }
 
     It '目标不存在时按无硬链接证据处理' {
