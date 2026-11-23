@@ -263,7 +263,9 @@ Describe 'Repair-ConfigLinks 五类链接修复' {
         $prev = $ErrorActionPreference
         $ErrorActionPreference = 'Stop'
         try {
-            { & $repairScript -Registry $reg } | Should -Not -Throw
+            $result = & $repairScript -Registry $reg -PassThru
+            $result.Total | Should -Be 2
+            $result.Unresolved | Should -Be @($poisonTarget)
         }
         finally {
             $ErrorActionPreference = $prev

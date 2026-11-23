@@ -13,12 +13,15 @@
     setup.ps1 建链后与 psync 拉取成功后自动调用。
     历史登记遇到普通目录或指向别处的有效链接时保留目标并告警；替换内容不同的
     普通文件前在同目录保留 .conflict-<时间戳>-<随机标识> 副本，备份失败则跳过该项。
+.PARAMETER PassThru
+    返回登记条目数及未能修复或检查的目标，供 setup 和 psync 汇总。
 #>
 #Requires -Version 5.1
-# 位置须在帮助块之后——放在首位会让 Get-Help / -? 读不到下面的帮助注释块
+[CmdletBinding()]
 param(
     # 注册表路径（默认机器本地位置；测试时可指向临时文件）
-    [string]$Registry = (Join-Path $env:LOCALAPPDATA 'pwsh-profile\linked-targets.json')
+    [string]$Registry = (Join-Path $env:LOCALAPPDATA 'pwsh-profile\linked-targets.json'),
+    [switch]$PassThru
 )
 
 $repoDir = Split-Path $PSScriptRoot
@@ -81,7 +84,7 @@ function __Refresh-CopyEntry {
     $isDir = $LinkType -eq 'CopyDirectory'
     $tgt = Get-Item -LiteralPath $Target -Force -ErrorAction SilentlyContinue
     if ($tgt -and ($tgt.LinkType -or $tgt.PSIsContainer -ne $isDir)) {
-        if (-not (__Clear-RepairTarget -Target $Target -Item $tgt -Src $Src)) { return }
+        if (-not (__Clear-RepairTarget -Target $Target -Item $tgt -Src $Src)) { return $Target }
         $tgt = $null
     }
     if (-not $tgt) {
@@ -96,9 +99,15 @@ function __Refresh-CopyEntry {
         return
     }
     if ($isDir) {
-        $null = robocopy $Src $Target /MIR /NJH /NJS /NDL /NFL /NP
-        if ($LASTEXITCODE -ge 8) {
-            Write-Warning "目录镜像同步失败（robocopy exit $LASTEXITCODE）: $Target"
+        $exitCode = & {
+            # robocopy 的 1 到 7 都表示操作完成。
+            $PSNativeCommandUseErrorActionPreference = $false
+            $null = robocopy $Src $Target /MIR /NJH /NJS /NDL /NFL /NP
+            $LASTEXITCODE
+        }
+        if ($exitCode -ge 8) {
+            Write-Warning "目录镜像同步失败（robocopy exit $exitCode）: $Target"
+            return $Target
         }
     }
     elseif ((Get-FileHash -LiteralPath $Src -ErrorAction Stop).Hash -ne
@@ -122,10 +131,9 @@ function __Repair-LinkOfType {
         [Parameter(Mandatory)][string]$Registry,
         [Parameter(Mandatory)][bool]$SrcIsDir
     )
-    # Junction 源不是目录是登记数据异常，跳过不碰（不计入失败）
     if ($ItemType -eq 'Junction' -and -not $SrcIsDir) {
         Write-Warning "Junction 源不是目录，跳过: $Src"
-        return
+        return $Target
     }
     if ($ItemType -eq 'HardLink' -and (Test-Path -LiteralPath $Target) -and
         (__Test-IsHardLinkOf -Src $Src -Target $Target)) { return }
@@ -139,7 +147,7 @@ function __Repair-LinkOfType {
             if ($tgt.LinkType -eq $ItemType -and $tgtTarget -and
                 (__Get-NormalizedFullPath $tgtTarget) -ieq $srcFull) { return }
         }
-        if (-not (__Clear-RepairTarget -Target $Target -Item $tgt -Src $Src)) { return }
+        if (-not (__Clear-RepairTarget -Target $Target -Item $tgt -Src $Src)) { return $Target }
     }
     try {
         $null = New-Item -ItemType $ItemType -Path $Target -Target $Src -ErrorAction Stop
@@ -172,19 +180,25 @@ function __Repair-LinkOfType {
 # 丢失，由下次 setup 按未登记目标重新接管升级为链接，属预期行为）
 $manifest = @(. (Join-Path $PSScriptRoot 'Get-ManagedLinks.ps1'))
 $entries = @(Restore-LinkRegistry -Path $Registry -Manifest $manifest -RepoDir $repoDir)
-if (-not $entries) { return }
-
 $failed = @()
+if (-not $entries -and $PassThru) {
+    try { $entries = @(__Read-LinkRegistryEntries $Registry) }
+    catch { $failed += $Registry }
+}
 foreach ($e in $entries) {
     $src = $e.Source
-    if (-not $src -or -not (Test-Path $src)) { continue }
-
-    # 逐条隔离失败：调用方 setup.ps1 设了 $ErrorActionPreference = Stop 并以 &
-    # 调用本脚本，此处任一 Remove/Copy 失败若不被捕获，会终止整个修复循环并连带
-    # 中断 setup，留下"半修复"状态。变更类操作一律显式 -ErrorAction Stop，
-    # 使失败在本条 catch 落下、其余条目照常处理。
     try {
-        $srcIsDir = (Get-Item $src).PSIsContainer
+        if (-not $src -or -not (Test-Path -LiteralPath $src -ErrorAction Stop)) {
+            Write-Warning "登记的源不存在，跳过修复: $($e.Target)"
+            $failed += $e.Target
+            continue
+        }
+        if ($e.LinkType -notin 'SymbolicLink', 'Junction', 'HardLink', 'Copy', 'CopyDirectory') {
+            Write-Warning "未知登记类型 $($e.LinkType)，跳过修复: $($e.Target)"
+            $failed += $e.Target
+            continue
+        }
+        $srcIsDir = (Get-Item -LiteralPath $src -ErrorAction Stop).PSIsContainer
 
         # 确保目标父目录存在（目标被整目录删除的场景）
         $parent = Split-Path $e.Target
@@ -192,14 +206,11 @@ foreach ($e in $entries) {
             New-Item -ItemType Directory -Path $parent -Force -ErrorAction Stop | Out-Null
         }
 
-        switch ($e.LinkType) {
-            'SymbolicLink' { __Repair-LinkOfType -ItemType SymbolicLink -Src $src -Target $e.Target -Registry $Registry -SrcIsDir $srcIsDir }
-            'Junction'     { __Repair-LinkOfType -ItemType Junction     -Src $src -Target $e.Target -Registry $Registry -SrcIsDir $srcIsDir }
-            'HardLink'     { __Repair-LinkOfType -ItemType HardLink     -Src $src -Target $e.Target -Registry $Registry -SrcIsDir $srcIsDir }
+        $failed += @(switch ($e.LinkType) {
             'Copy'          { __Refresh-CopyEntry -Src $src -Target $e.Target -LinkType 'Copy' }
             'CopyDirectory' { __Refresh-CopyEntry -Src $src -Target $e.Target -LinkType 'CopyDirectory' }
-            default { continue }   # 未知类型不碰
-        }
+            default         { __Repair-LinkOfType -ItemType $e.LinkType -Src $src -Target $e.Target -Registry $Registry -SrcIsDir $srcIsDir }
+        })
     }
     catch {
         $failed += $e.Target
@@ -207,8 +218,9 @@ foreach ($e in $entries) {
     }
 }
 
-# 失败汇总：不改变退出语义（降级路径本就允许修复类型不可用），只保证
-# 单条失败不再中断其余条目与调用方，同时把未修复项显式报出来
 if ($failed.Count) {
-    Write-Warning "本轮 $($entries.Count) 项中有 $($failed.Count) 项未能修复: $($failed -join '; ')"
+    Write-Warning "本轮有 $($failed.Count) 项仍待处理: $($failed -join '、')"
+}
+if ($PassThru) {
+    [pscustomobject]@{ Total = $entries.Count; Unresolved = $failed }
 }
