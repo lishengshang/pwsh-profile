@@ -1,9 +1,7 @@
 ﻿# ==============================================================
 # 链接注册表读写（setup.ps1 与 Repair-ConfigLinks.ps1 共用）
 # %LOCALAPPDATA%\pwsh-profile\linked-targets.json 记录 Target/Source/LinkType
-# 三元组。写入原子（tmp + Move）；读改写经命名 Mutex 串行，setup 与 Repair 并发
-# 登记不再互相覆盖；JSON 损坏时 Restore-LinkRegistry 备份 .corrupt-<时间戳> 后
-# 按清单与磁盘状态重建。
+# 三元组。命名 Mutex 串行登记与自愈，更新时在同一目录写临时文件再替换。
 # 下方 __ 前缀函数中，__Test-IsHardLinkOf 与两个路径 helper 也被
 # Repair-ConfigLinks.ps1 / Deploy-ConfigLinks.ps1 跨文件调用（片段无独立作用域）。
 # ==============================================================
@@ -22,41 +20,57 @@ function __Get-PrimaryLinkTarget {
     return [string](@($Item.Target) | Select-Object -First 1)
 }
 
-# 内部：注册表 JSON 文本 → 条目数组。解析失败抛异常（调用方决定视为空还是自愈）。
-# 5.1 读顶层 JSON 数组会把属性合并成数组而非对象数组，需显式展开。
+# 兼容旧的并列数组格式，校验结构后才允许更新登记。
 function __ConvertFrom-RegistryJson {
     param([Parameter(Mandatory)][string]$Json)
-    $raw = $Json | ConvertFrom-Json
-    if ($raw -and $raw.Target -is [array]) {
-        $items = @()
-        $targets = @($raw.Target)
-        $sources = @($raw.Source)
-        $types = @($raw.LinkType)
-        for ($i = 0; $i -lt $targets.Count; $i++) {
-            $items += [pscustomobject]@{
-                Target = [string]$targets[$i]
-                Source = [string]$sources[$i]
-                LinkType = [string]$types[$i]
-            }
+    $raw = ConvertFrom-Json -InputObject $Json -ErrorAction Stop
+    if ($null -eq $raw -and $Json -match '^\s*\[\s*\]\s*$') { return @() }
+
+    $entries = @($raw)
+    if ($raw -is [pscustomobject] -and $raw.Target -is [array]) {
+        if ($raw.Source -isnot [array] -or $raw.LinkType -isnot [array] -or
+            $raw.Target.Count -ne $raw.Source.Count -or $raw.Target.Count -ne $raw.LinkType.Count) {
+            throw '链接注册表的旧版字段数组长度不一致。'
         }
-        return $items
+        $entries = @(for ($i = 0; $i -lt $raw.Target.Count; $i++) {
+            [pscustomobject]@{ Target = $raw.Target[$i]; Source = $raw.Source[$i]; LinkType = $raw.LinkType[$i] }
+        })
     }
-    return @($raw)
+    foreach ($entry in $entries) {
+        if ($entry.Target -isnot [string] -or [string]::IsNullOrWhiteSpace($entry.Target) -or
+            $entry.Source -isnot [string] -or [string]::IsNullOrWhiteSpace($entry.Source) -or
+            $entry.LinkType -isnot [string] -or [string]::IsNullOrWhiteSpace($entry.LinkType)) {
+            throw '链接注册表条目缺少有效的 Target、Source 或 LinkType。'
+        }
+    }
+    return $entries
+}
+
+function __Read-LinkRegistryText {
+    param([Parameter(Mandatory)][string]$Path)
+    $filePath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path)
+    try { return [IO.File]::ReadAllText($filePath) }
+    catch [IO.FileNotFoundException], [IO.DirectoryNotFoundException] { return $null }
+}
+
+function __Read-LinkRegistryEntries {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '',
+        Justification = '读取登记条目集合，复数语义正确')]
+    param([Parameter(Mandatory)][string]$Path)
+    $json = __Read-LinkRegistryText $Path
+    if ($null -eq $json) { return @() }
+    return __ConvertFrom-RegistryJson $json
 }
 
 function Get-LinkRegistryEntries {
-    # 复数名词为既有公共接口名（tests/setup/Repair 多处调用），且返回条目集合
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '',
         Justification = '返回登记条目集合，复数语义正确')]
     param([Parameter(Mandatory)][string]$Path)
-    if (-not (Test-Path $Path)) { return @() }
-    try { return __ConvertFrom-RegistryJson (Get-Content $Path -Raw) }
-    catch { return @() }   # 损坏的 JSON 视为空，按未登记处理（自愈走 Restore-LinkRegistry）
+    try { return __Read-LinkRegistryEntries $Path }
+    catch { return @() }   # 只读探测允许降级，写入必须使用严格读取
 }
 
-# 内部：命名 Mutex 串行化注册表读改写。Global 命名空间跨会话互斥；创建失败或
-# 等待超时降级为不加锁继续（注册表只是 Repair 的增强依据，宁丢一次登记不阻塞主流程）。
-# AbandonedMutex（持锁进程异常退出）按已获得处理。
+# Global 命名空间跨会话互斥，不能加锁时宁可推迟登记也不覆盖其他进程的写入。
 function __Invoke-WithLinkRegistryLock {
     param(
         [Parameter(Mandatory)][scriptblock]$Body,
@@ -65,17 +79,18 @@ function __Invoke-WithLinkRegistryLock {
     $mtx = $null
     $locked = $false
     try {
-        try { $mtx = [System.Threading.Mutex]::new($false, 'Global\pwsh-profile-linkregistry') }
-        catch {
-            $mtx = $null
-            Write-Warning "链接注册表锁创建失败（不加锁继续）: $($_.Exception.Message)"
+        try {
+            $mtx = [System.Threading.Mutex]::new($false, 'Global\pwsh-profile-linkregistry')
+            $locked = $mtx.WaitOne($TimeoutMs)
         }
-        if ($mtx) {
-            try { $locked = $mtx.WaitOne($TimeoutMs) }
-            catch [System.Threading.AbandonedMutexException] { $locked = $true }
-            if (-not $locked) {
-                Write-Warning "链接注册表锁等待超时（${TimeoutMs}ms），不加锁继续——并发登记可能互相覆盖"
-            }
+        catch [System.Threading.AbandonedMutexException] { $locked = $true }
+        catch {
+            Write-Warning "无法获取链接注册表锁，已跳过写入: $($_.Exception.Message)"
+            return
+        }
+        if (-not $locked) {
+            Write-Warning "链接注册表锁等待超时（${TimeoutMs}ms），已跳过写入。"
+            return
         }
         & $Body
     }
@@ -132,11 +147,8 @@ function __Get-ManagedLinkTypeFromDisk {
     return $null
 }
 
-# 注册表自愈入口（Repair-ConfigLinks.ps1 调用）：正常时原样返回、不落盘；解析失败
-# 先备份 .corrupt-<时间戳>，锁内重读仍失败则按清单与磁盘状态重建。重建只认领有磁盘
-# 证据的链接，Copy 登记随之丢失、由下次 setup 重新接管，属预期行为。
+# 损坏的登记只能靠磁盘上的链接重建，普通副本无法证明原来的归属。
 function Restore-LinkRegistry {
-    # 参数在传入 __Invoke-WithLinkRegistryLock 的脚本块内使用，规则不追踪脚本块
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'Manifest', Justification = '脚本块内使用')]
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'RepoDir', Justification = '脚本块内使用')]
     param(
@@ -144,31 +156,49 @@ function Restore-LinkRegistry {
         [Parameter(Mandatory)]$Manifest,
         [Parameter(Mandatory)][string]$RepoDir
     )
-    if (-not (Test-Path $Path)) { return @() }
-    try { return __ConvertFrom-RegistryJson (Get-Content $Path -Raw) }
-    catch { Write-Debug ("首次解析失败，进入自愈: " + $_.Exception.Message) }
+    try { return __Read-LinkRegistryEntries $Path }
+    catch { Write-Debug "首次读取登记失败: $($_.Exception.Message)" }
     return __Invoke-WithLinkRegistryLock -Body {
-        # 锁内重读：并发进程可能已修复
-        try { return __ConvertFrom-RegistryJson (Get-Content $Path -Raw) }
-        catch { Write-Debug "锁内重读仍损坏: $($_.Exception.Message)" }
-        $corrupt = "$Path.corrupt-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
-        Copy-Item -LiteralPath $Path -Destination $corrupt -Force
-        Write-Warning "链接注册表损坏，已备份到 $corrupt，正按清单与磁盘状态重建"
-        $entries = @()
-        foreach ($m in $Manifest) {
-            if (-not $m.Target -or -not $m.Source) { continue }
-            $src = Join-Path $RepoDir $m.Source
-            $type = __Get-ManagedLinkTypeFromDisk -Src $src -Target $m.Target
-            if ($type) {
-                $entries += [pscustomobject]@{
-                    Target   = (Get-Item -LiteralPath $m.Target -Force).FullName
-                    Source   = $src
-                    LinkType = $type
-                }
-            }
+        # 锁内重读以识别并发恢复，并将读取失败与内容损坏区分开。
+        try { $json = __Read-LinkRegistryText $Path }
+        catch {
+            Write-Warning "链接注册表读取失败，已跳过恢复: $($_.Exception.Message)"
+            return
         }
-        Save-LinkRegistryEntries -Path $Path -Entries $entries
-        return $entries
+        if ($null -eq $json) { return }
+        try { return __ConvertFrom-RegistryJson $json }
+        catch { Write-Debug "锁内解析登记失败: $($_.Exception.Message)" }
+
+        $backup = "$Path.corrupt-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+        if (Test-Path -LiteralPath $backup) {
+            $backup += "-$([guid]::NewGuid().ToString('N'))"
+        }
+        try { Copy-Item -LiteralPath $Path -Destination $backup -ErrorAction Stop }
+        catch {
+            Write-Warning "损坏注册表备份失败，已跳过恢复: $($_.Exception.Message)"
+            return
+        }
+        Write-Warning "链接注册表损坏，已备份到 $backup，正按清单与磁盘状态重建"
+
+        try {
+            $entries = @(
+                foreach ($m in $Manifest) {
+                    if (-not $m.Target -or -not $m.Source) { continue }
+                    $src = Join-Path $RepoDir $m.Source
+                    $type = __Get-ManagedLinkTypeFromDisk -Src $src -Target $m.Target
+                    if ($type) {
+                        [pscustomobject]@{
+                            Target   = (Get-Item -LiteralPath $m.Target -Force -ErrorAction Stop).FullName
+                            Source   = $src
+                            LinkType = $type
+                        }
+                    }
+                }
+            )
+            Save-LinkRegistryEntries -Path $Path -Entries $entries
+            return $entries
+        }
+        catch { Write-Warning "链接注册表重建失败: $($_.Exception.Message)" }
     }
 }
 
@@ -179,18 +209,22 @@ function Save-LinkRegistryEntries {
         [Parameter(Mandatory)][string]$Path,
         [Parameter(Mandatory)]$Entries
     )
+    $filePath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path)
+    $tmp = "$filePath.tmp-$([guid]::NewGuid().ToString('N'))"
     try {
-        $dir = Split-Path $Path
-        if ($dir -and -not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
-        $tmp = "$Path.tmp"
-        # -InputObject 保证单元素也输出 JSON 数组
-        ConvertTo-Json -InputObject @($Entries) -Depth 3 | Set-Content -Path $tmp -Encoding UTF8
-        Move-Item -Path $tmp -Destination $Path -Force
+        $null = [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($filePath))
+        # -InputObject 确保单条登记也写成 JSON 数组。临时文件与目标必须在同一目录，才能直接替换。
+        $json = ConvertTo-Json -InputObject @($Entries) -Depth 3 -ErrorAction Stop
+        [IO.File]::WriteAllText($tmp, $json)
+        if ([IO.File]::Exists($filePath)) {
+            [IO.File]::Replace($tmp, $filePath, [NullString]::Value)
+        }
+        else {
+            [IO.File]::Move($tmp, $filePath)
+        }
     }
-    catch {
-        # 注册表是 Repair 的增强依据，写入失败（权限/磁盘/并发占用）不应中断
-        # setup 主流程，只警告；旧注册表保持原样
-        Write-Warning "链接注册表写入失败: $($_.Exception.Message)"
+    finally {
+        if ([IO.File]::Exists($tmp)) { Remove-Item -LiteralPath $tmp -ErrorAction SilentlyContinue }
     }
 }
 
@@ -206,13 +240,19 @@ function Set-LinkRegistryEntry {
         [Parameter(Mandatory)][string]$Source,
         [Parameter(Mandatory)][string]$LinkType
     )
-    # 读改写全程持锁（setup 与 Repair 并发登记经命名 Mutex 串行，不再互相
-    # 覆盖；超时/创建失败降级为不加锁继续）。同目标先删旧记录再追加，
-    # 保证最新类型生效（HardLink 降级 Copy 时复写）
     __Invoke-WithLinkRegistryLock -Body {
-        $entries = @(Get-LinkRegistryEntries $Path) | Where-Object { $_.Target -ne $Target }
-        $entries = @($entries) + [pscustomobject]@{ Target = $Target; Source = $Source; LinkType = $LinkType }
-        Save-LinkRegistryEntries -Path $Path -Entries $entries
+        try {
+            $entries = @(__Read-LinkRegistryEntries $Path)
+            $matchingEntries = @($entries | Where-Object Target -eq $Target)
+            if ($matchingEntries.Count -eq 1 -and $matchingEntries[0].Source -eq $Source -and $matchingEntries[0].LinkType -eq $LinkType) {
+                return
+            }
+
+            $otherEntries = @($entries | Where-Object Target -ne $Target)
+            $entry = [pscustomobject]@{ Target = $Target; Source = $Source; LinkType = $LinkType }
+            Save-LinkRegistryEntries -Path $Path -Entries ($otherEntries + $entry)
+        }
+        catch { Write-Warning "链接注册表登记失败，已跳过 ${Target}: $($_.Exception.Message)" }
     }
 }
 

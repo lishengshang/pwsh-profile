@@ -96,6 +96,28 @@ Describe 'Save-LinkRegistryEntries / Set-LinkRegistryEntry' {
         $entries[0].LinkType | Should -Be 'Copy'
     }
 
+    It '无法解析登记时保留原文件 <Content>' -ForEach @(
+        @{ Content = '{ incomplete' }
+        @{ Content = '{"Unexpected":[]}' }
+        @{ Content = '' }
+    ) {
+        $reg = Join-Path $root 'unreadable.json'
+        [IO.File]::WriteAllText($reg, $Content)
+        Set-LinkRegistryEntry -Path $reg -Target 'C:\a\t1' -Source 'C:\r\s1' -LinkType 'HardLink'
+        [IO.File]::ReadAllText($reg) | Should -BeExactly $Content
+    }
+
+    It '相同登记不改写注册表' {
+        $reg = Join-Path $root 'unchanged.json'
+        $registered = @{ Path = $reg; Target = 'C:\a\t1'; Source = 'C:\r\s1'; LinkType = 'HardLink' }
+        Set-LinkRegistryEntry @registered
+        [IO.File]::SetLastWriteTimeUtc($reg, [datetime]'2024-01-01T00:00:00Z')
+        $before = [IO.File]::GetLastWriteTimeUtc($reg)
+        Set-LinkRegistryEntry @registered
+        [IO.File]::GetLastWriteTimeUtc($reg) | Should -Be $before
+        @(Get-LinkRegistryEntries $reg).Count | Should -Be 1
+    }
+
     It '不同目标逐条追加' {
         $reg = Join-Path $root 'multi.json'
         Set-LinkRegistryEntry -Path $reg -Target 'C:\a\t1' -Source 'C:\r\s1' -LinkType 'HardLink'

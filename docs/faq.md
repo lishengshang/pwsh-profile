@@ -95,11 +95,11 @@ CopyDirectory 是按登记管理的目录镜像，仍会清理目标中源不存
 
 ## 链接注册表损坏或丢失了怎么办
 
-状态文件为 `$env:LOCALAPPDATA\pwsh-profile\linked-targets.json`。建议在重跑 setup 前单独运行修复脚本：JSON 解析失败时会先保存 `.corrupt-<时间戳>` 副本，再按链接清单与磁盘证据重建。
+状态文件为 `$env:LOCALAPPDATA\pwsh-profile\linked-targets.json`。setup 会在登记前检查它，单独运行修复脚本也会检查。登记损坏时会先保存 `.corrupt-<时间戳>` 副本（重名时追加随机后缀），再按完整链接清单与磁盘证据重建。若备份失败或无法获取写入锁，登记文件保留，按警告排查后重试。
 
 重建只认领有证据的 SymbolicLink、Junction、HardLink；普通副本不能仅因内容相同就被认领。注册表丢失时也不能自动恢复 Copy/CopyDirectory 的归属。外部目标仍存在时，setup 的 SkipIfExists 可能继续保留它，不能保证重跑就自动接管。
 
-已确认需要重新管理副本时，先自行完整备份并移走目标，再按原组件运行 setup。setup 部署阶段可能先写入登记，因此不要把“setup 结束时会修复”当作任何损坏状态都必然已保留原注册表的保证。
+已确认需要重新管理副本时，先自行完整备份并移走目标，再按原组件运行 setup。
 
 ## 加载变慢或 IDE 中找不到工具
 

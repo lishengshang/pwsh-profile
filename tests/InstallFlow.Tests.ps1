@@ -86,6 +86,25 @@ $reg = Join-Path $env:LOCALAPPDATA 'pwsh-profile\linked-targets.json'
         $result.Sources | Should -Not -Contain 'yazi\theme.toml'
     }
 
+    It 'Minimal 安装先备份损坏登记并恢复未选组件的受管链接' {
+        $caseRoot = New-SetupFixture
+        $target = Join-Path $caseRoot 'local\nvim'
+        $source = Join-Path $caseRoot 'repo\nvim'
+        $registryDir = Join-Path $caseRoot 'local\pwsh-profile'
+        New-Item -ItemType Directory -Path $registryDir -Force | Out-Null
+        New-Item -ItemType Junction -Path $target -Target $source | Out-Null
+        $registry = Join-Path $registryDir 'linked-targets.json'
+        $original = '{ damaged registry'
+        [IO.File]::WriteAllText($registry, $original)
+
+        $result = Invoke-SetupFixture -CaseRoot $caseRoot -Mode Minimal
+
+        $result.Sources | Should -Contain 'nvim'
+        $backups = @(Get-ChildItem -LiteralPath $registryDir -File -Filter 'linked-targets.json.corrupt-*')
+        $backups.Count | Should -Be 1
+        [IO.File]::ReadAllText($backups[0].FullName) | Should -BeExactly $original
+    }
+
     It 'Minimal 安装保留旧 editor 登记下的新个人目录' {
         $caseRoot = New-SetupFixture
         $target = Join-Path $caseRoot 'local\nvim'
