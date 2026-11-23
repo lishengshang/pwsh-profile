@@ -144,4 +144,12 @@ Describe 'Invoke-ConfigLinkDeployment' {
         Test-Path (Join-Path $targets 'no-such-file.toml') | Should -BeFalse
         Get-LinkRegistryEntries $reg | Should -Be @()
     }
+
+    It '符号链接命令假成功时探测返回 False' {
+        Mock New-Item { [pscustomobject]@{ LinkType = 'SymbolicLink' } } -ParameterFilter {
+            $ItemType -eq 'SymbolicLink'
+        }
+
+        Test-SymlinkAvailable | Should -BeFalse
+    }
 }

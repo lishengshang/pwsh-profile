@@ -143,6 +143,10 @@ function __Repair-LinkOfType {
     }
     try {
         $null = New-Item -ItemType $ItemType -Path $Target -Target $Src -ErrorAction Stop
+        # 命令成功不等于链接已落盘，校验失败走降级副本
+        if ((__Get-ManagedLinkTypeFromDisk -Src $Src -Target $Target) -ne $ItemType) {
+            throw "$ItemType 创建后校验失败: $Target"
+        }
         $labels = @{ SymbolicLink = '符号链接'; Junction = 'Junction'; HardLink = '硬链接' }
         Write-Host "已修复$($labels[$ItemType]): $Target" -ForegroundColor Green
     }

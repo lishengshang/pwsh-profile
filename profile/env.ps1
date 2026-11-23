@@ -1,5 +1,5 @@
 ﻿# ==============================================================
-# 环境初始化（PATH 重建在入口的工具探测之前，本文件只管 fnm / EDITOR / fzf）
+# 环境初始化（fnm、Conda、EDITOR、fzf、Yazi）
 # ==============================================================
 
 # fnm（Node 版本管理）两段式：default 版本目录（junction）前置 PATH 作静态兜底，
@@ -78,5 +78,40 @@ if (-not $env:YAZI_FILE_ONE -and $global:__Tools.ContainsKey('yazi')) {
         if (-not $_git) { continue }
         $_fileOne = Join-Path (Split-Path (Split-Path $_git)) 'usr\bin\file.exe'
         if (Test-Path $_fileOne) { $env:YAZI_FILE_ONE = $_fileOne; break }
+    }
+}
+
+if (-not $env:PROFILE_NO_CONDA -and $global:__Tools.ContainsKey('conda')) {
+    function conda {
+        [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingInvokeExpression', '',
+            Justification = 'Conda 官方 hook 必须在当前会话执行才能导入模块并设置环境')]
+        param()
+
+        $autoActivate = $env:CONDA_AUTO_ACTIVATE
+        $legacyAutoActivate = $env:CONDA_AUTO_ACTIVATE_BASE
+        $changePs1 = $env:CONDA_CHANGEPS1
+        $condaExe = $global:__Tools['conda'].Source
+        try {
+            # 新旧 Conda 都识别 AUTO_ACTIVATE_BASE，同时设两个同义键会报错。
+            $env:CONDA_AUTO_ACTIVATE = $null
+            $env:CONDA_AUTO_ACTIVATE_BASE = 'false'
+            # 提示符由 Starship 管理，首次导入 Conda 时不能接管 prompt。
+            $env:CONDA_CHANGEPS1 = 'false'
+            $hook = & $condaExe shell.powershell hook | Out-String
+        }
+        finally {
+            $env:CONDA_AUTO_ACTIVATE = $autoActivate
+            $env:CONDA_AUTO_ACTIVATE_BASE = $legacyAutoActivate
+            $env:CONDA_CHANGEPS1 = $changePs1
+        }
+        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($hook)) {
+            throw "Conda hook 生成失败：$condaExe（退出码 $LASTEXITCODE）"
+        }
+        & {
+            $ErrorActionPreference = 'Stop'
+            Invoke-Expression $hook
+        }
+        # 后续调用由模块导出的同名别名接管。首次显式转发，避免递归进入占位函数。
+        Conda\Invoke-Conda @args
     }
 }

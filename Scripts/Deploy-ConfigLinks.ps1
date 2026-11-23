@@ -12,7 +12,8 @@ function Test-SymlinkAvailable {
     $link = "$tmp-link"
     try {
         $null = New-Item -ItemType SymbolicLink -Path $link -Target $tmp -ErrorAction Stop
-        return $true
+        # 受限环境可能返回成功却未落盘，必须以磁盘结果判定
+        return ((__Get-ManagedLinkTypeFromDisk -Src $tmp -Target $link) -eq 'SymbolicLink')
     }
     catch {
         return $false
@@ -121,7 +122,10 @@ function Invoke-ConfigLinkDeployment {
         $isDir = (Get-Item -LiteralPath $src).PSIsContainer
         $linkType = $null
         if ($useSymlink) {
-            $null = New-Item -ItemType SymbolicLink -Path $item.Target -Target $src -Force
+            $null = New-Item -ItemType SymbolicLink -Path $item.Target -Target $src -Force -ErrorAction Stop
+            if ((__Get-ManagedLinkTypeFromDisk -Src $src -Target $item.Target) -ne 'SymbolicLink') {
+                throw "符号链接创建后校验失败: $($item.Target)"
+            }
             Write-Host "已链接: $($item.Source) -> $($item.Target)" -ForegroundColor Green
             $linkType = 'SymbolicLink'
         }
@@ -132,6 +136,9 @@ function Invoke-ConfigLinkDeployment {
             if ($isDir) { $kind = 'Junction'; $label = 'junction' }
             try {
                 $null = New-Item -ItemType $kind -Path $item.Target -Target $src -ErrorAction Stop
+                if ((__Get-ManagedLinkTypeFromDisk -Src $src -Target $item.Target) -ne $kind) {
+                    throw "$kind 创建后校验失败: $($item.Target)"
+                }
                 Write-Host "已链接($label): $($item.Source) -> $($item.Target)" -ForegroundColor Green
                 $linkType = $kind
             }

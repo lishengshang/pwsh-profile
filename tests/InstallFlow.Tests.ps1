@@ -43,7 +43,7 @@ foreach ($dir in $env:LOCALAPPDATA, $env:APPDATA, $env:PWSH_TEST_HOME, (Split-Pa
 $setup = Join-Path $PSScriptRoot 'repo\setup.ps1'
 switch ($Mode) {
     'Full' { & $setup -Full -SkipTools -Yes; & $setup -Full -SkipTools -Yes }
-    'WizardFull' { $env:PWSH_TEST_COMPONENTS = 'core,completion,editor,files,gitui'; & $setup -Wizard -SkipTools -Yes }
+    'WizardFull' { $env:PWSH_TEST_COMPONENTS = 'core,completion,editor,files,gitui,python'; & $setup -Wizard -SkipTools -Yes }
     'WizardCore' { $env:PWSH_TEST_COMPONENTS = 'core'; & $setup -Wizard -SkipTools -Yes }
     'Minimal' { & $setup -Minimal -SkipTools -Yes }
     default { throw 'Unknown fixture mode' }

@@ -64,7 +64,7 @@ Get-PSReadLineKeyHandler -Chord Tab,'Ctrl+t','Ctrl+r'
 Get-Module PSReadLine,PSCompletions,PSFzf
 ```
 
-PSReadLine、PSCompletions、PSFzf 都可能影响补全。需要排除 PSFzf TabExpansion 时，在加载前设置 `PROFILE_NO_FZF_TAB=1`；排除 PSCompletions 时设置 `PROFILE_NO_COMPLETIONS=1`。两者职责不同，具体说明见[加载与补全边界](reference.md#加载与补全边界)。
+PSReadLine、PSCompletions、PSFzf 都可能影响补全。PSFzf 默认不接管 Tab；如需 fzf-tab，在加载前设置 `PROFILE_FZF_TAB=1`，发生冲突时先移除该变量。排除 PSCompletions 时设置 `PROFILE_NO_COMPLETIONS=1`。具体说明见[加载与补全边界](reference.md#加载与补全边界)。
 
 开关非空即启用，设成 `0` 并不会关闭。移除变量后重开终端复查。非交互测试会跳过部分键位设置，不能证明真实终端中的绑定正确。
 
@@ -113,4 +113,4 @@ Remove-Item Env:PROFILE_DEBUG
 
 重复加载是定位手段，不能当作冷启动性能数据。首次提示符、第一次智能跳转及第一次 Node 调用还会有延迟初始化，计时范围见[启动性能与交互验收](maintenance.md#启动性能与交互验收)。
 
-默认 profile 从 Windows 注册表重建 PATH，可能丢弃 IDE 或虚拟环境注入的路径。确需保留父进程 PATH 时，在加载 profile 前启用 `PROFILE_KEEP_PARENT_PATH`，再检查工具路径；不要只因一次未找到命令就重装工具。
+默认 profile 从 Windows 注册表重建 PATH。已激活的 Conda 或 Python venv（包括 uv 的 `.venv`）会保留父进程 PATH。要保留 IDE 等应用注入的路径，可以在加载 profile 前启用 `PROFILE_KEEP_PARENT_PATH`，再检查工具路径。

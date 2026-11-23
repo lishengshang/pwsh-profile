@@ -56,12 +56,6 @@
 
 ## P2：长期优化
 
-- [ ] **明确 PSCompletions、PSFzf 和 PSReadLine 的职责**
-  - PSC 导入后 Tab 由其 trigger_key 接管（psreadline 的 MenuComplete 仅在
-    PROFILE_NO_COMPLETIONS=1 时生效，见 psreadline.ps1 注释）。
-  - 评估默认关闭 PSFzf `TabExpansion`（当前被 PSC 接管后实际不生效），保留
-    Ctrl+t/Ctrl+r/Git 快捷键；避免多个组件同时接管 Tab 和补全菜单。
-
 - [x] **补充链接部署模式文档**
   - docs/reference.md 说明五类模式、同步行为、权限与冲突保护边界。
   - docs/faq.md 说明冲突备份、登记丢失和恢复方式。

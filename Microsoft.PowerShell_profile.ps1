@@ -60,8 +60,10 @@ else {
 $global:__ProfileRepoDir = $_repoDir
 
 # 先从注册表重建 PATH 再探测工具——否则从 IDE/快捷方式启动时父进程 PATH 不完整，
-# 注册表里已有的工具会探测不到。PROFILE_KEEP_PARENT_PATH=1 保留父进程 PATH。
-if (-not $env:PROFILE_KEEP_PARENT_PATH) {
+# 注册表里已有的工具会探测不到。激活的 Python 环境依赖父进程注入的 PATH。
+$hasCondaEnv = $env:CONDA_PREFIX -and [System.IO.Directory]::Exists("$env:CONDA_PREFIX\conda-meta")
+$hasVirtualEnv = $env:VIRTUAL_ENV -and [System.IO.File]::Exists("$env:VIRTUAL_ENV\pyvenv.cfg")
+if (-not ($env:PROFILE_KEEP_PARENT_PATH -or $hasCondaEnv -or $hasVirtualEnv)) {
     $env:PATH = [Environment]::GetEnvironmentVariable('PATH','Machine') + ';' + [Environment]::GetEnvironmentVariable('PATH','User')
 }
 
@@ -72,11 +74,11 @@ $_debug = [bool]$env:PROFILE_DEBUG
 $_total = [System.Diagnostics.Stopwatch]::StartNew()
 
 # 批量探测外部工具。用 File.Exists 遍历 PATH（.exe/.cmd/.bat）而非 Get-Command：
-# 后者对每个缺失名字要做 PATH × PATHEXT 全展开（11 个名字 ~190ms vs 这里 ~37ms）。
+# 后者需对每个缺失名字做 PATH × PATHEXT 全展开，启动实测明显更慢。
 # 只列 profile 会引用 __Tools 的名字；jq 等纯外部依赖（yazi 预览自寻 PATH）不入列。
 $global:__Tools = @{}
 $_dirs = $env:PATH -split ';' | Where-Object { $_ }
-foreach ($_name in 'eza','rg','grep','fd','bat','7z','fnm','nvim','zoxide','fzf','starship','yazi','lazygit','git') {
+foreach ($_name in 'eza','rg','grep','fd','bat','7z','fnm','nvim','zoxide','fzf','starship','yazi','lazygit','git','conda') {
     foreach ($_d in $_dirs) {
         foreach ($_e in '.exe','.cmd','.bat') {
             if ([System.IO.File]::Exists("$_d\$_name$_e")) {
@@ -85,6 +87,21 @@ foreach ($_name in 'eza','rg','grep','fd','bat','7z','fnm','nvim','zoxide','fzf'
             }
         }
         if ($global:__Tools.ContainsKey($_name)) { break }
+    }
+}
+
+# Miniforge 默认不一定写入 PATH；PATH 未命中时补探测 CONDA_EXE 与常见安装目录。
+if (-not $global:__Tools.ContainsKey('conda')) {
+    foreach ($_conda in @(
+        $env:CONDA_EXE
+        (Join-Path $env:USERPROFILE 'miniforge3\Scripts\conda.exe')
+        (Join-Path $env:LOCALAPPDATA 'miniforge3\Scripts\conda.exe')
+        (Join-Path $env:ProgramData 'miniforge3\Scripts\conda.exe')
+    )) {
+        if ($_conda -and [System.IO.File]::Exists($_conda)) {
+            $global:__Tools['conda'] = [pscustomobject]@{ Name = 'conda'; Source = $_conda }
+            break
+        }
     }
 }
 
