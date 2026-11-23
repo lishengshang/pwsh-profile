@@ -6,7 +6,7 @@
     适合"别人拿到这个项目"的第一条命令。默认克隆到 $HOME\Documents\PowerShell
     （pwsh 的 $PROFILE 目录），因此 profile 直接生效，setup.ps1 会跳过文件链接只装工具。
     PowerShell 7 为可选推荐（完整体验）：5.1 交互运行时会询问是否顺便安装
-    （默认推荐安装）；不装则以当前 5.1 兼容模式完成部署，同样进入安装向导。
+    （默认推荐安装）。部署优先使用已安装的 PowerShell 7，找不到时回退到 Windows PowerShell 5.1。
 .PARAMETER RepoUrl
     仓库地址，默认本仓库（https://github.com/lishengshang/pwsh-profile.git）。
 .PARAMETER RepoDir
@@ -14,7 +14,7 @@
 .PARAMETER SkipTools
     透传给 setup.ps1，跳过工具与模块安装。
 .PARAMETER SkipPwsh
-    跳过 PowerShell 7 安装，仅以 Windows PowerShell 5.1 兼容模式部署
+    跳过 PowerShell 7 安装。部署优先使用已安装的 PowerShell 7，找不到时使用 Windows PowerShell 5.1
     （不想被交互询问时的显式开关）。
 .PARAMETER Minimal / Full / Components / SkipComponents
     透传给 setup.ps1 的组件选择（含义见 setup.ps1；默认 Standard = core+completion+gitui）。
@@ -83,14 +83,14 @@ if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
 $skipPwshInstall = $false
 if ($SkipPwsh) {
     $skipPwshInstall = $true
-    Write-Host '跳过 PowerShell 7 安装（-SkipPwsh）：以 Windows PowerShell 5.1 兼容模式部署。' -ForegroundColor DarkYellow
+    Write-Host '跳过 PowerShell 7 安装（-SkipPwsh）。' -ForegroundColor DarkYellow
 }
 elseif ($PSVersionTable.PSVersion.Major -lt 7 -and
     [Environment]::UserInteractive -and -not [Console]::IsInputRedirected -and -not $Yes) {
-    $ans = Read-Host '是否顺便安装 PowerShell 7 获得完整体验？(Y=推荐安装 / n=仅用自带 5.1)'
+    $ans = Read-Host '是否顺便安装 PowerShell 7 获得完整体验？(Y=推荐安装 / n=跳过安装)'
     if ($ans -match '^\s*[nN]') {
         $skipPwshInstall = $true
-        Write-Host '已选择仅用 Windows PowerShell 5.1（兼容模式）。' -ForegroundColor DarkYellow
+        Write-Host '已选择跳过 PowerShell 7 安装。' -ForegroundColor DarkYellow
     }
 }
 if (-not $skipPwshInstall) {
@@ -155,7 +155,7 @@ if ($pwshPath) {
 }
 else {
     # 5.1 默认执行策略 Restricted，必须 -ExecutionPolicy Bypass 才能运行脚本
-    Write-Host "`n未安装 PowerShell 7：使用 Windows PowerShell 5.1 完成部署（兼容模式）。" -ForegroundColor DarkYellow
+    Write-Host "`n使用 Windows PowerShell 5.1 部署（兼容模式）。" -ForegroundColor DarkYellow
     & (Join-Path $PSHOME 'powershell.exe') @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $setup) @setupArgs
 }
 # 原生命令的非零退出码不会被 ErrorActionPreference=Stop 转为异常。
