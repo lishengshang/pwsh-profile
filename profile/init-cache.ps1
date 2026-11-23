@@ -1,64 +1,95 @@
 ﻿# ==============================================================
-# 外部工具 init 缓存助手
-# 统一 starship / zoxide 的缓存逻辑（fnm 不缓存——其输出含每进程独立的
-# FNM_MULTISHELL_PATH，跨会话缓存会导致 PATH 失效，见 env.ps1）：
-#   - 默认 7 天 TTL（TtlDays=0 时只按工具二进制 mtime 失效）
-#   - 工具二进制升级（mtime 更新）即失效，无需手动删缓存
-#   - 原子写入（先 .tmp 再 Move），生成失败时回退旧缓存
-# 用法（profile 加载时同步调用）：
-#   Initialize-CachedInit -Command starship -CacheFile $path -Arguments @('init','powershell')
-#   返回 $true 表示缓存文件可用，调用方再决定 dot-source 时机。
-#   Use-CachedInit 为其组合形式：生成成功即 dot-source（zoxide 场景——init 输出
-#   全是 global: 函数 + 别名，可安全在任意时机加载；prompt 需要控制加载时机，用两步形式）。
+# 外部工具 init 缓存助手（Starship、zoxide）
+# fnm 输出包含每个会话独立的路径，见 env.ps1。
 # ==============================================================
 
-function Initialize-CachedInit {
-    param(
-        [Parameter(Mandatory)][string]$Command,   # $global:__Tools 中的键名
-        [Parameter(Mandatory)][string]$CacheFile, # 缓存文件完整路径
-        [string[]]$Arguments,                     # 生成 init 脚本的参数
-        [int]$TtlDays = 7                         # 0 = 不按时间过期，只按工具 mtime
-    )
+function __ConvertTo-CachedInitBlock {
+    param([string]$Text, [string]$CacheFile)
 
-    $tool = $global:__Tools[$Command]
-    if (-not $tool) { return $false }
-
-    $item = Get-Item $CacheFile -ErrorAction SilentlyContinue
-    if ($item) {
-        # 工具升级即失效：二进制 mtime 比缓存新则重新生成
-        $toolTime = (Get-Item $tool.Source -ErrorAction SilentlyContinue).LastWriteTime
-        if ($toolTime -and $toolTime -gt $item.LastWriteTime) {
-            $item = $null
-        }
-        elseif ($TtlDays -le 0 -or $item.LastWriteTime -ge (Get-Date).AddDays(-$TtlDays)) {
-            return $true   # 缓存新鲜，直接可用
-        }
-    }
-
-    try {
-        # 用完整路径调用（而非裸命令名），避免 PATH 变化导致解析失败；
-        # Source 由入口探测构造，恒非空
-        $out = & $tool.Source @Arguments 2>$null | Out-String
-        if ($LASTEXITCODE -eq 0 -and $out.Trim()) {
-            $tmp = "$CacheFile.tmp"
-            Set-Content -Path $tmp -Value $out -Encoding UTF8
-            Move-Item -Path $tmp -Destination $CacheFile -Force
-            return $true
-        }
-    }
-    catch {
-        Write-Host "[$Command] 缓存生成失败: $_" -ForegroundColor Yellow
-    }
-    return (Test-Path $CacheFile)  # 生成失败时回退到旧缓存
+    if ([string]::IsNullOrWhiteSpace($Text)) { return }
+    $tokens = $null
+    $errors = $null
+    $ast = [System.Management.Automation.Language.Parser]::ParseInput($Text, $CacheFile, [ref]$tokens, [ref]$errors)
+    if ($errors.Count -eq 0) { $ast.GetScriptBlock() }
 }
 
-function Use-CachedInit {
+function __Get-CachedInitScript {
     param(
         [Parameter(Mandatory)][string]$Command,
         [Parameter(Mandatory)][string]$CacheFile,
         [string[]]$Arguments,
-        [int]$TtlDays = 7
+        [ValidateRange(0, [int]::MaxValue)][int]$TtlDays = 7
     )
-    $null = Initialize-CachedInit @PSBoundParameters
-    if (Test-Path $CacheFile) { . $CacheFile }
+
+    $tool = $global:__Tools[$Command]
+    if (-not $tool) { return }
+    $source = [IO.Path]::GetFullPath($tool.Source)
+    $toolItem = [IO.FileInfo]::new($source)
+    if (-not $toolItem.Exists) { return }
+
+    $parts = [string[]]@($source; foreach ($argument in $Arguments) { $argument })
+    # 原生参数不能含 NUL，用它分隔能保留参数边界及顺序。
+    $identityBytes = [Text.Encoding]::UTF8.GetBytes([string]::Join([string][char]0, $parts))
+    $hash = [Security.Cryptography.SHA256]::Create()
+    try {
+        $identity = [BitConverter]::ToString($hash.ComputeHash($identityBytes)).Replace('-', '')
+    }
+    finally {
+        $hash.Dispose()
+    }
+    $prefix = "# pwsh-profile-init-cache-v1 $identity "
+    $fingerprint = '{0}:{1}' -f $toolItem.LastWriteTimeUtc.Ticks, $toolItem.Length
+
+    $cached = $null
+    $cacheItem = [IO.FileInfo]::new($CacheFile)
+    if ($cacheItem.Exists) {
+        try {
+            $text = [IO.File]::ReadAllText($CacheFile, [Text.Encoding]::UTF8)
+            $lineEnd = $text.IndexOf([char]10)
+            if ($lineEnd -ge 0) {
+                $header = $text.Substring(0, $lineEnd).TrimEnd([char]13)
+                if ($header.StartsWith($prefix, [StringComparison]::Ordinal) -and
+                    $header.Substring($prefix.Length) -match '^\d+:\d+$') {
+                    $cached = __ConvertTo-CachedInitBlock -Text $text.Substring($lineEnd + 1) -CacheFile $CacheFile
+                    $unexpired = $TtlDays -eq 0 -or ([DateTime]::UtcNow - $cacheItem.LastWriteTimeUtc).TotalDays -le $TtlDays
+                    if ($null -ne $cached -and $unexpired -and $header -ceq "$prefix$fingerprint") { return $cached }
+                }
+            }
+        }
+        catch {
+            Write-Debug "[$Command] 读取初始化缓存失败：$_"
+        }
+    }
+
+    $fresh = $null
+    try {
+        $out = & $source @Arguments 2>$null | Out-String
+        if ($LASTEXITCODE -eq 0) { $fresh = __ConvertTo-CachedInitBlock -Text $out -CacheFile $CacheFile }
+    }
+    catch {
+        Write-Debug "[$Command] 生成初始化脚本失败：$_"
+    }
+    if ($null -eq $fresh) { return $cached }
+
+    # 不同会话各写同目录的独立临时文件，再发布已验证的完整内容。
+    $tempFile = "$CacheFile.$([guid]::NewGuid().ToString('N')).tmp"
+    try {
+        $text = "$prefix$fingerprint" + [Environment]::NewLine + $out
+        [IO.File]::WriteAllText($tempFile, $text, [Text.UTF8Encoding]::new($true))
+        if ([IO.File]::Exists($CacheFile)) {
+            [IO.File]::Replace($tempFile, $CacheFile, [NullString]::Value)
+        }
+        else {
+            [IO.File]::Move($tempFile, $CacheFile)
+        }
+    }
+    catch {
+        Write-Debug "[$Command] 写入初始化缓存失败：$_"
+    }
+    finally {
+        try { [IO.File]::Delete($tempFile) }
+        catch { Write-Debug "[$Command] 清理初始化缓存临时文件失败：$_" }
+    }
+    # 落盘失败不影响本次使用。调用方执行已验证的代码块，不必重读缓存。
+    $fresh
 }

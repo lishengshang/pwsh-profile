@@ -137,7 +137,7 @@ Remove-Item Env:PROFILE_KEEP_PARENT_PATH
 
 ## 加载与补全边界
 
-Starship 初始化延迟到首次提示符，zoxide 延迟到首次 `z` / `zi`，fnm 延迟到首次 node/npm/npx/corepack。Starship 与 zoxide 初始化脚本使用 7 天缓存，工具修改时间更新时失效；fnm 输出包含进程独立路径，不跨会话缓存。
+Starship 初始化延迟到首次提示符，zoxide 延迟到首次 `z` / `zi`，fnm 延迟到首次 node/npm/npx/corepack。Starship 与 zoxide 的初始化缓存以可执行文件路径和完整参数为依据，默认 7 天过期，工具修改时间或文件大小变化也会触发重新生成。生成失败时，仅沿用路径和参数匹配且可解析的旧脚本。fnm 输出包含进程独立路径，不跨会话缓存。
 
 Conda 依次从 PATH、`CONDA_EXE` 和 Miniforge 常见安装目录探测，已有 Conda 可直接使用。每个会话首次执行 `conda` 时生成并加载官方 shell hook，随后由 Conda 模块接管命令及其自带别名。环境激活由用户显式调用，提示符仍由 profile 管理。
 
