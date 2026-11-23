@@ -2,54 +2,115 @@
 # 环境初始化（fnm、Conda、EDITOR、fzf、Yazi）
 # ==============================================================
 
-# fnm（Node 版本管理）两段式：default 版本目录（junction）前置 PATH 作静态兜底，
-# 首次调用 node/npm/npx/corepack 才执行 fnm env。fnm env 输出不可跨会话缓存——
-# FNM_MULTISHELL_PATH 每进程独立，复用会让新终端指向已销毁的目录。
-# PROFILE_NO_FNM=1 完全跳过。
+# fnm 的 shim 路径属于当前进程，收到需要版本环境的命令时再生成。
 if ($global:__Tools.ContainsKey('fnm') -and -not $env:PROFILE_NO_FNM) {
     $_fnmDefault = Join-Path $env:APPDATA 'fnm\aliases\default'
-    if (Test-Path $_fnmDefault) { $env:PATH = "$_fnmDefault;$env:PATH" }
+    if (Test-Path -LiteralPath $_fnmDefault) { $env:PATH = "$_fnmDefault;$env:PATH" }
 
     $script:__fnmReady = $false
-    # 占位函数：首次调用触发初始化。不能用 zoxide 那种「init 重定义自身」模式——
-    # fnm env 只设环境变量不重定义命令，须显式按 Application 解析避开占位函数自身。
-    function __Ensure-Fnm {
-        # fnm env 输出必须 eval（官方安装方式），无等价的非 iex 写法
-        [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingInvokeExpression', '',
-            Justification = 'fnm env 输出是 setenv 脚本，官方指定 eval 安装')]
-        param([string]$Cmd)
-        if (-not $script:__fnmReady) {
-            $script:__fnmReady = $true
-            Remove-Item "$env:TEMP\fnm-init-cache.ps1" -ErrorAction SilentlyContinue
-            $out = & $global:__Tools['fnm'].Source env --use-on-cd --shell powershell 2>$null | Out-String
-            if ($out) {
-                # fnm env 会把生成时的 PATH 快照写进 $env:PATH，恢复后只前置本进程 shim 目录
-                $_cleanPath = $env:PATH
-                Invoke-Expression $out | Out-Null
-                $env:PATH = $_cleanPath
-                if ($env:FNM_MULTISHELL_PATH) {
-                    $env:PATH = "$env:FNM_MULTISHELL_PATH;$env:PATH"
-                }
+    $script:__fnmDirectory = $null
+
+    function __Initialize-FnmEnv {
+        if ($script:__fnmReady) { return $true }
+
+        $fnmExe = $global:__Tools['fnm'].Source
+        $originalPath = $env:PATH
+        $originalShim = $env:FNM_MULTISHELL_PATH
+        try {
+            $out = & {
+                # Windows PowerShell 5.1 把 fnm 已重定向的版本提示视为错误流。
+                $ErrorActionPreference = 'Continue'
+                $PSNativeCommandUseErrorActionPreference = $false
+                & $fnmExe env --use-on-cd --shell powershell 2>$null | Out-String
             }
-            # 补一次当前目录版本解析，等价 use-on-cd 的进入行为
-            if ($out -and ((Test-Path .nvmrc) -or (Test-Path .node-version) -or (Test-Path package.json))) {
-                & $global:__Tools['fnm'].Source use --silent-if-unchanged 2>$null
+            if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($out)) { return $false }
+
+            $hook = [scriptblock]::Create($out)
+            . $hook | Out-Null
+            $script:__fnmReady = [bool]$env:FNM_MULTISHELL_PATH
+        }
+        catch {
+            Write-Debug "fnm 会话初始化失败：$_"
+        }
+        finally {
+            if ($script:__fnmReady) {
+                $env:PATH = "$env:FNM_MULTISHELL_PATH;$originalPath"
+            }
+            else {
+                $env:FNM_MULTISHELL_PATH = $originalShim
+                $env:PATH = $originalPath
             }
         }
-        $real = Get-Command $Cmd -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
-        if ($real) { & $real.Source @args }
-        else { Write-Host "找不到 $Cmd（fnm 未安装任何 Node 版本？运行 fnm install <版本>）" -ForegroundColor Yellow }
+        $script:__fnmReady
     }
-    # PSA 把 node 认作 PowerShell 内置命令——实为 fnm 占位转发，覆盖即设计本身
+
+    function __Set-FnmProjectVersion {
+        if ($PWD.Provider.Name -ne 'FileSystem' -or $PWD.ProviderPath -eq $script:__fnmDirectory) { return }
+        $script:__fnmDirectory = $PWD.ProviderPath
+
+        # cd 的官方钩子会经过 fnm；其他导航入口在下一次 Node 命令前检查版本。
+        if ($env:FNM_VERSION_FILE_STRATEGY -eq 'recursive' -or
+            (Test-Path -LiteralPath .nvmrc) -or (Test-Path -LiteralPath .node-version) -or
+            (Test-Path -LiteralPath package.json)) {
+            $previousExitCode = $global:LASTEXITCODE
+            try {
+                $null = & {
+                    $ErrorActionPreference = 'Continue'
+                    $PSNativeCommandUseErrorActionPreference = $false
+                    & $global:__Tools['fnm'].Source use --silent-if-unchanged 2>$null
+                }
+            }
+            catch {
+                Write-Debug "fnm 项目版本切换失败：$_"
+            }
+            finally {
+                $global:LASTEXITCODE = $previousExitCode
+            }
+        }
+    }
+
+    function fnm {
+        $subcommand = if ($args.Count) { $args[0] }
+        $installsVersion = $subcommand -in 'install', 'i'
+        $activatesVersion = $subcommand -eq 'use' -or ($installsVersion -and '--use' -in $args)
+        if ($activatesVersion -or $subcommand -eq 'current') {
+            if (-not (__Initialize-FnmEnv)) {
+                if (!$LASTEXITCODE) { $global:LASTEXITCODE = 1 }
+                Write-Warning 'fnm 会话初始化失败。请检查 fnm env 的输出后重试。'
+                return
+            }
+            if ($subcommand -eq 'current') { __Set-FnmProjectVersion }
+        }
+        & $global:__Tools['fnm'].Source @args
+        if ($LASTEXITCODE -eq 0) {
+            if ($activatesVersion -and $PWD.Provider.Name -eq 'FileSystem') {
+                $script:__fnmDirectory = $PWD.ProviderPath
+            }
+            elseif ($installsVersion) {
+                # 之前的项目版本可能尚未安装，下次使用 Node 时重新选择。
+                $script:__fnmDirectory = $null
+            }
+        }
+    }
+
+    function __Invoke-FnmNode {
+        param([string]$Command)
+
+        if (__Initialize-FnmEnv) { __Set-FnmProjectVersion }
+        $real = Get-Command $Command -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($real) { & $real.Source @args }
+        else { Write-Host "找不到 $Command（fnm 未安装任何 Node 版本？运行 fnm install <版本>）" -ForegroundColor Yellow }
+    }
+
     function node {
         [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidOverwritingBuiltInCmdlets', 'node',
             Justification = 'fnm 占位转发函数，非 PowerShell 内置命令')]
         param()
-        __Ensure-Fnm node @args
+        __Invoke-FnmNode node @args
     }
-    function npm      { __Ensure-Fnm npm @args }
-    function npx      { __Ensure-Fnm npx @args }
-    function corepack { __Ensure-Fnm corepack @args }
+    function npm      { __Invoke-FnmNode npm @args }
+    function npx      { __Invoke-FnmNode npx @args }
+    function corepack { __Invoke-FnmNode corepack @args }
 }
 
 # fzf 配色 Tokyo Night。bg:-1 = 用终端默认背景（不绘制实色块），壁纸半透明才透得出来；
