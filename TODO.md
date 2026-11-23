@@ -40,7 +40,7 @@
         由下次 setup 重新接管升级为链接）
   - [x] 并发锁：命名 Mutex 防 setup 与 Repair 同时登记互相覆盖
         （__Invoke-WithLinkRegistryLock 串行化 Set-LinkRegistryEntry 读改写与
-        迁移/重建落盘；创建失败或超时降级为不加锁继续）
+        重建落盘。未能获取锁时跳过登记与重建写入）
   - [x] 备份目录治理：只清理严格 `backup-<yyyyMMdd-HHmmss>` 命名目录，保留最近 3 份
         （Remove-StaleLinkBackup，部署结束后执行；大小写或格式不一致的一律不碰）
 

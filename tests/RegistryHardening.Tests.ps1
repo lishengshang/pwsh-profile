@@ -79,6 +79,33 @@ Describe 'Restore-LinkRegistry 损坏自愈' {
         @(Get-LinkRegistryEntries $reg).Count | Should -Be 2
     }
 
+    It '备份失败时不覆盖损坏注册表' {
+        $reg = Join-Path $root 'backup-failure.json'
+        $original = '{ original'
+        [IO.File]::WriteAllText($reg, $original)
+        Mock Copy-Item { throw 'Backup failed' } -ParameterFilter { $Destination -like '*.corrupt-*' }
+
+        @(Restore-LinkRegistry -Path $reg -Manifest @(@{ Target = 'unused'; Source = 'unused' }) -RepoDir $root).Count |
+            Should -Be 0
+        [IO.File]::ReadAllText($reg) | Should -BeExactly $original
+    }
+
+    It '同一秒的历史备份不会被覆盖' {
+        $reg = Join-Path $root 'backup-collision.json'
+        $stamp = '20261123-120000'
+        $previous = "$reg.corrupt-$stamp"
+        [IO.File]::WriteAllText($previous, 'first corruption')
+        [IO.File]::WriteAllText($reg, 'second corruption')
+        Mock Get-Date { '20261123-120000' } -ParameterFilter { $Format -eq 'yyyyMMdd-HHmmss' }
+
+        $null = Restore-LinkRegistry -Path $reg -Manifest @(@{ Target = 'unused'; Source = 'unused' }) -RepoDir $root
+        [IO.File]::ReadAllText($previous) | Should -BeExactly 'first corruption'
+        $backups = @(Get-ChildItem -LiteralPath $root -File -Filter 'backup-collision.json.corrupt-*')
+        $backups.Count | Should -Be 2
+        $other = $backups | Where-Object FullName -ne $previous
+        [IO.File]::ReadAllText($other.FullName) | Should -BeExactly 'second corruption'
+    }
+
     It '指向别处的 Junction 不被认领（用户自有配置不碰）' {
         $case = Join-Path $root ([guid]::NewGuid().ToString('N'))
         $repo = Join-Path $case 'repo'
@@ -119,7 +146,7 @@ Describe '__Invoke-WithLinkRegistryLock 并发锁' {
         }
     }
 
-    It '锁被其他线程持有时超时降级：告警并仍执行脚本块' {
+    It '锁被其他线程持有时超时告警且不执行写入' {
         $marker = Join-Path ([System.IO.Path]::GetTempPath()) ("pester-mutex-" + [guid]::NewGuid().ToString('N') + '.flag')
         # 后台 runspace 持锁 3 秒，拿到锁后写标记文件（测试轮询等待，避免竞态）
         $ps = [powershell]::Create()
@@ -141,7 +168,7 @@ Start-Sleep -Seconds 3
 
             $warnings = @()
             $ran = __Invoke-WithLinkRegistryLock -TimeoutMs 300 -Body { $true } -WarningVariable +warnings
-            $ran | Should -BeTrue           # 超时后降级执行，不阻塞主流程
+            $ran | Should -BeNullOrEmpty
             $warnings.Count | Should -Be 1  # 降级时有告警
         }
         finally {

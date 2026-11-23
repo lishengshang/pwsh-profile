@@ -56,9 +56,9 @@ $profileDir = [System.IO.Path]::GetFullPath((Split-Path $PROFILE)).TrimEnd('\')
 #   Core 条目部署 $PROFILE 本体（仓库即 $PROFILE 目录时整组跳过）；
 #   外部条目（starship/lazygit/yazi/nvim）即使仓库即 $PROFILE 目录也照常链接；
 #   SkipIfExists：目标已存在时不动它（用户自己的配置优先），仅缺失时引入仓库默认。
-$linkItems = @(. (Join-Path $repoDir 'Scripts\Get-ManagedLinks.ps1'))
+$linkManifest = @(. (Join-Path $repoDir 'Scripts\Get-ManagedLinks.ps1'))
 # 防呆：既非 Core 又无合法 Component 的条目会被静默跳过，提前告警（同 $wingetTools）
-foreach ($l in $linkItems) {
+foreach ($l in $linkManifest) {
     if (-not $l.Core -and $l.Component -notin $allComponents) {
         Write-Warning "链接条目 '$($l.Source)' 既非 Core 也无合法 Component，它不会被链接——请修正 Get-ManagedLinks.ps1。"
     }
@@ -118,7 +118,7 @@ if ($pendingWizard) {
     $ExcludeTools        = @($wizardChoice.ExcludeTools)
 }
 # 向导可能增删默认组件，必须等最终选择确定后再过滤，避免部署清单停留在 Standard。
-$linkItems = @($linkItems | Where-Object { $_.Core -or ($effectiveComponents -contains $_.Component) })
+$linkItems = @($linkManifest | Where-Object { $_.Core -or ($effectiveComponents -contains $_.Component) })
 # -ExcludeTools 直接传参时同样归一化（逗号分隔兼容 pwsh -File 的单 token 形态）
 $ExcludeTools = if ($ExcludeTools) { @(__NormalizeComponents $ExcludeTools) } else { @() }
 Write-Host "安装组件: $($effectiveComponents -join ', ')" -ForegroundColor Cyan
@@ -244,6 +244,9 @@ if ($repoDir -ieq $profileDir) {
     Write-Host '检测到仓库目录就是 $PROFILE 所在目录（本机直用仓库），跳过 $PROFILE 相关文件链接。' -ForegroundColor DarkYellow
     $linkItems = @($linkItems | Where-Object { -not $_.Core })
 }
+
+# 登记前恢复全部组件中的有效链接，避免本轮没选中的链接失去登记。
+$null = Restore-LinkRegistry -Path $__RegistryPath -Manifest $linkManifest -RepoDir $repoDir
 
 # 链接必须在 Initialize-LazyVim 之后建立（nvim/ 目录要先存在）；仅 editor 组件引入
 if ($effectiveComponents -contains 'editor') { Initialize-LazyVim }
