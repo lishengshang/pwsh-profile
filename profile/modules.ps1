@@ -34,9 +34,6 @@ function psc {
     Write-Host 'PSCompletions 模块未加载：请新开终端（profile 会同步导入）；仍缺失时执行 Install-Module PSCompletions -Scope CurrentUser' -ForegroundColor Yellow
 }
 
-# 防止重复订阅（如手动 dot-source profile 时）
-Unregister-Event -SourceIdentifier PowerShell.OnIdle -ErrorAction SilentlyContinue
-
 # PSCompletions（命令补全）：官方禁止在函数/脚本块/事件动作里嵌套 Import-Module
 # （别名缺失、会话锁死），必须在 $PROFILE 顶层同步导入。v7.3.0 起模块自带懒初始化，
 # 首次按 Tab 才做重活，勿再自己包一层 OnIdle（AGENTS.md 规则 1 的例外条款）。
@@ -46,19 +43,23 @@ if (-not $env:PROFILE_NO_COMPLETIONS) {
     Import-Module PSCompletions -ErrorAction SilentlyContinue *> $null
 }
 
-# PSFzf 懒加载（OnIdle）
-$null = Register-EngineEvent -SourceIdentifier PowerShell.OnIdle -Action {
-    # 仅执行一次
-    Unregister-Event -SourceIdentifier PowerShell.OnIdle -ErrorAction SilentlyContinue
+# PowerShell.OnIdle 是共享事件，重载时只撤销本 profile 登记的订阅。
+if ($script:__psFzfIdleJob) {
+    Get-EventSubscriber -SourceIdentifier PowerShell.OnIdle -ErrorAction SilentlyContinue |
+        Where-Object { $_.Action -and $_.Action.Id -eq $script:__psFzfIdleJob.Id } |
+        ForEach-Object { Unregister-Event -SubscriptionId $_.SubscriptionId -ErrorAction Ignore }
+    $script:__psFzfIdleJob = $null
+}
 
-    # PSFzf：Ctrl+t 查文件、Ctrl+r 搜历史，-GitKeyBindings 挂 git 各子命令的 fzf 选择
-    if ($global:__Tools.ContainsKey('fzf')) {
-        Import-Module PSFzf -ErrorAction SilentlyContinue
-        if (Get-Command Set-PsFzfOption -ErrorAction SilentlyContinue) {
-            Set-PsFzfOption -PSReadlineChordProvider 'Ctrl+t' -PSReadlineChordReverseHistory 'Ctrl+r' -GitKeyBindings
-            # PSFzf 不默认接管 Tab（PSCompletions 负责补全）；需要 fzf-tab 时显式开启
-            if ($env:PROFILE_FZF_TAB) {
-                Set-PsFzfOption -TabExpansion -TabCompletionPreviewWindow 'right:60%'
+if ($global:__Tools.ContainsKey('fzf')) {
+    $script:__psFzfIdleJob = Register-EngineEvent -SourceIdentifier PowerShell.OnIdle -MaxTriggerCount 1 -Action {
+        if ($global:__Tools.ContainsKey('fzf')) {
+            Import-Module PSFzf -ErrorAction SilentlyContinue
+            if (Get-Command Set-PsFzfOption -ErrorAction SilentlyContinue) {
+                Set-PsFzfOption -PSReadlineChordProvider 'Ctrl+t' -PSReadlineChordReverseHistory 'Ctrl+r' -GitKeyBindings
+                if ($env:PROFILE_FZF_TAB) {
+                    Set-PsFzfOption -TabExpansion -TabCompletionPreviewWindow 'right:60%'
+                }
             }
         }
     }
