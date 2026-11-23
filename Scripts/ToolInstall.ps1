@@ -11,12 +11,21 @@
 function Test-ManagedToolInstalled {
     param(
         [Parameter(Mandatory)][string]$Name,
-        [Parameter(Mandatory)][string]$Id
+        [Parameter(Mandatory)][string]$Id,
+        [string]$CommandName,
+        [switch]$PathOnly
     )
-    if (Get-Command $Name -ErrorAction SilentlyContinue) { return $true }
-    # 2>$null：winget list 在源异常时往 stderr 输出进度/错误，只取 stdout 匹配
-    return [bool](winget list --id $Id --exact --accept-source-agreements 2>$null |
-        Select-String -Pattern ([regex]::Escape($Id)) -Quiet)
+    if (-not $CommandName) { $CommandName = $Name }
+    if (Get-Command $CommandName -CommandType Application -ErrorAction SilentlyContinue) { return $true }
+    if ($PathOnly) { return $false }
+
+    $output = & {
+        # 5.1 把 WinGet 重定向的 stderr 视为错误流，查不到登记时仍应继续安装。
+        $ErrorActionPreference = 'Continue'
+        $PSNativeCommandUseErrorActionPreference = $false
+        winget list --id $Id --exact --accept-source-agreements 2>$null
+    }
+    return ($LASTEXITCODE -eq 0 -and ($output | Select-String -Pattern $Id -SimpleMatch -Quiet))
 }
 
 function __Invoke-SetupNativeCommand {
