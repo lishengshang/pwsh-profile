@@ -34,7 +34,7 @@ function __Toggle-ToggleToken {
         [Parameter(Mandatory)][string]$Token,
         [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Indexed,
         [string]$NameProperty,
-        [Parameter(Mandatory)][System.Collections.Generic.List[string]]$Toggles,
+        [Parameter(Mandatory)][AllowEmptyCollection()][System.Collections.Generic.List[string]]$Toggles,
         [Parameter(Mandatory)][string]$UnknownWarning
     )
     $names = if ($NameProperty) { @($Indexed | ForEach-Object { $_.$NameProperty }) } else { @($Indexed) }
@@ -48,7 +48,7 @@ function __Toggle-ToggleToken {
         Write-Warning "${UnknownWarning}: $Token"
         return
     }
-    if ($Toggles.Contains($name)) { $Toggles.Remove($name) } else { $null = $Toggles.Add($name) }
+    if ($Toggles.Contains($name)) { $null = $Toggles.Remove($name) } else { $null = $Toggles.Add($name) }
 }
 
 function Show-WizardIntro {
@@ -86,7 +86,7 @@ function Invoke-ComponentMenu {
         $ans    = Read-Host '输入编号或组件名切换勾选（逗号/空格分隔），a=全选，回车=确认，q=退出'
         $tokens = __WizardParseAnswer $ans
         if ($tokens -contains 'q') { return $null }
-        if (-not $tokens)          { return @($list) }
+        if (-not $tokens)          { return @{ Components = $list.ToArray() } }
         if ($tokens -contains 'a') {
             $list = [System.Collections.Generic.List[string]]$keys
             continue
@@ -186,8 +186,9 @@ function Invoke-SetupWizard {
     $selected = @($DefaultComponents)
     $excluded = [System.Collections.Generic.List[string]]::new()
     while ($true) {
-        $selected = Invoke-ComponentMenu -Selected $selected
-        if ($null -eq $selected) { return $null }
+        $menuResult = Invoke-ComponentMenu -Selected $selected
+        if ($null -eq $menuResult) { return $null }
+        $selected = $menuResult.Components
 
         # 组件变更后，剔除名单里已不属于任何所选组件的条目清理掉
         $validNames = @($Tools |
