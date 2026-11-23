@@ -31,7 +31,7 @@
 | `-ExcludeTools fnm,ffmpeg` | 按工具清单的 Name 排除本轮安装；不排除模块、配置，也不卸载已有工具 |
 | `-Yes` | 跳过默认向导；不改变组件预设 |
 | `-Wizard` | 没有显式组件选择时强制进入向导，优先于 `-Yes`；不覆盖显式组件参数 |
-| `-SkipTools` | 跳过工具、模块与 flavor 下载；仍部署配置和检查历史链接 |
+| `-SkipTools` | 跳过工具、模块、Yazi flavor 和 LazyVim starter 下载。仍部署已有配置和检查历史链接 |
 
 多值参数推荐逗号分隔，兼容 `pwsh -File`；在 PowerShell 会话中调用脚本也可传字符串数组。不要写成 `-Components core gitui`，它会因多余的位置参数而报错。
 
@@ -40,6 +40,8 @@
 .\setup.ps1 -Full -SkipComponents editor -Yes
 .\setup.ps1 -Wizard -SkipTools
 ```
+
+选择 `editor` 并使用 `-SkipTools` 时，setup 会部署当前检出中已有的 `nvim/`。缺少该目录时会提示，并继续部署其他选中的配置。
 
 向导取消会在部署与下载之前结束。bootstrap 的 setup 子进程非零退出时，引导报错并停止，不显示“引导完成”；可选工具安装失败可能只产生告警，完成提示不代表每项可选依赖都已安装成功。
 

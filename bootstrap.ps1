@@ -12,7 +12,7 @@
 .PARAMETER RepoDir
     克隆目标目录，默认 $HOME\Documents\PowerShell。
 .PARAMETER SkipTools
-    透传给 setup.ps1，跳过工具与模块安装。
+    透传给 setup.ps1，跳过外部依赖和配置下载。
 .PARAMETER SkipPwsh
     跳过 PowerShell 7 安装。部署优先使用已安装的 PowerShell 7，找不到时使用 Windows PowerShell 5.1
     （不想被交互询问时的显式开关）。
