@@ -7,8 +7,8 @@
     注册表 %LOCALAPPDATA%\pwsh-profile\linked-targets.json 由 setup.ps1 建链时
     登记（Target/Source/LinkType 三元组），本脚本按登记的类型把目标恢复到仓库
     最新状态——SymbolicLink 重建符号链接、HardLink 重链、Copy 比较哈希后刷新
-    副本、CopyDirectory 用 robocopy /MIR 镜像同步；未登记的目标（用户自有配置）
-    永远不碰。修复类型不可用时降级为 Copy 并更新注册表（下次不再徒劳重试）。
+    副本、CopyDirectory 按文件哈希更新并保留本地修改或个人文件。未登记的目标
+    不参与修复。修复类型不可用时降级为副本并更新注册表。
     注册表 JSON 损坏时自动备份 .corrupt-<时间戳> 并按清单与磁盘状态重建。
     setup.ps1 建链后与 psync 拉取成功后自动调用。
     历史登记遇到普通目录或指向别处的有效链接时保留目标并告警；替换内容不同的
@@ -28,6 +28,7 @@ $repoDir = Split-Path $PSScriptRoot
 
 # 注册表读写单源在 LinkRegistry.ps1（原子写；路径规范化的两个 helper 也在此）
 . (Join-Path $PSScriptRoot 'LinkRegistry.ps1')
+. (Join-Path $PSScriptRoot 'Sync-ConfigCopyDirectory.ps1')
 
 # 登记只能证明过去受管，不能证明后来放在同路径的个人配置仍属于仓库。
 # 普通文件又可能是 git 原子替换留下的失联硬链接，先保留旧内容再重建。
@@ -69,46 +70,17 @@ function __Clear-RepairTarget {
     return $true
 }
 
-# 内部：刷新已登记的副本（Copy/CopyDirectory）。类型冲突先走保护分支，
-# 目标丢失则按源类型恢复；仍在的目录用 robocopy /MIR 镜像
-# （源已删除的文件也会被清理；exit code 0-7 均为成功），文件哈希有差异才刷新
-# （psync 拉取后同步副本的通道）。
-# 注：switch 的 case 条件写数组（'Copy','CopyDirectory'）不产生「任一匹配」
-# 语义，实测永不命中——两类共用逻辑必须走函数调用，不能合进同一个 case 块。
 function __Refresh-CopyEntry {
-    param(
-        [Parameter(Mandatory)][string]$Src,
-        [Parameter(Mandatory)][string]$Target,
-        [Parameter(Mandatory)][ValidateSet('Copy', 'CopyDirectory')][string]$LinkType
-    )
-    $isDir = $LinkType -eq 'CopyDirectory'
+    param([string]$Src, [string]$Target)
+
     $tgt = Get-Item -LiteralPath $Target -Force -ErrorAction SilentlyContinue
-    if ($tgt -and ($tgt.LinkType -or $tgt.PSIsContainer -ne $isDir)) {
+    if ($tgt -and ($tgt.LinkType -or $tgt.PSIsContainer)) {
         if (-not (__Clear-RepairTarget -Target $Target -Item $tgt -Src $Src)) { return $Target }
         $tgt = $null
     }
     if (-not $tgt) {
-        if ($isDir) {
-            Copy-Item -Path $Src -Destination $Target -Recurse -Force -ErrorAction Stop
-            Write-Host "已恢复目录副本: $Target" -ForegroundColor Green
-        }
-        else {
-            Copy-Item -Path $Src -Destination $Target -Force -ErrorAction Stop
-            Write-Host "已恢复副本: $Target" -ForegroundColor Green
-        }
-        return
-    }
-    if ($isDir) {
-        $exitCode = & {
-            # robocopy 的 1 到 7 都表示操作完成。
-            $PSNativeCommandUseErrorActionPreference = $false
-            $null = robocopy $Src $Target /MIR /NJH /NJS /NDL /NFL /NP
-            $LASTEXITCODE
-        }
-        if ($exitCode -ge 8) {
-            Write-Warning "目录镜像同步失败（robocopy exit $exitCode）: $Target"
-            return $Target
-        }
+        Copy-Item -Path $Src -Destination $Target -Force -ErrorAction Stop
+        Write-Host "已恢复副本: $Target" -ForegroundColor Green
     }
     elseif ((Get-FileHash -LiteralPath $Src -ErrorAction Stop).Hash -ne
         (Get-FileHash -LiteralPath $Target -ErrorAction Stop).Hash) {
@@ -117,6 +89,7 @@ function __Refresh-CopyEntry {
         Write-Host "已刷新副本: $Target" -ForegroundColor Green
     }
 }
+
 
 # 内部：按登记类型重建链接。SymbolicLink/Junction/HardLink 的「已是正确链接则跳过
 # → 处理目标冲突 → 重建 → 失败按源类型降级 Copy 并回写注册表」结构完全一致，
@@ -162,14 +135,14 @@ function __Repair-LinkOfType {
         # 重建失败（无权限建符号链接、跨卷建硬链接等）：按源类型降级为副本并
         # 回写注册表，下次不再徒劳重试
         if ($SrcIsDir) {
-            Copy-Item -Path $Src -Destination $Target -Recurse -Force -ErrorAction Stop
-            $copyType = 'CopyDirectory'
+            if (-not (Sync-ConfigCopyDirectory -Source $Src -Target $Target -RegistryPath $Registry -Create)) {
+                return $Target
+            }
         }
         else {
             Copy-Item -Path $Src -Destination $Target -Force -ErrorAction Stop
-            $copyType = 'Copy'
+            Set-LinkRegistryEntry -Path $Registry -Target $Target -Source $Src -LinkType 'Copy'
         }
-        Set-LinkRegistryEntry -Path $Registry -Target $Target -Source $Src -LinkType $copyType
         Write-Host "已降级为副本（$ItemType 不可用）: $Target" -ForegroundColor DarkYellow
     }
 }
@@ -207,8 +180,10 @@ foreach ($e in $entries) {
         }
 
         $failed += @(switch ($e.LinkType) {
-            'Copy'          { __Refresh-CopyEntry -Src $src -Target $e.Target -LinkType 'Copy' }
-            'CopyDirectory' { __Refresh-CopyEntry -Src $src -Target $e.Target -LinkType 'CopyDirectory' }
+            'Copy'          { __Refresh-CopyEntry -Src $src -Target $e.Target }
+            'CopyDirectory' {
+                if (-not (Sync-ConfigCopyDirectory -Source $src -Target $e.Target -RegistryPath $Registry)) { $e.Target }
+            }
             default         { __Repair-LinkOfType -ItemType $e.LinkType -Src $src -Target $e.Target -Registry $Registry -SrcIsDir $srcIsDir }
         })
     }

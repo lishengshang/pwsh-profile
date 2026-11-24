@@ -27,7 +27,8 @@ function __ConvertFrom-RegistryJson {
     if ($null -eq $raw -and $Json -match '^\s*\[\s*\]\s*$') { return @() }
 
     $entries = @($raw)
-    if ($raw -is [pscustomobject] -and $raw.Target -is [array]) {
+    # 5.1 会枚举对象数组的 Target 属性，不能把它误当成旧版的并列字段数组。
+    if ($raw -isnot [array] -and $raw -is [pscustomobject] -and $raw.Target -is [array]) {
         if ($raw.Source -isnot [array] -or $raw.LinkType -isnot [array] -or
             $raw.Target.Count -ne $raw.Source.Count -or $raw.Target.Count -ne $raw.LinkType.Count) {
             throw '链接注册表的旧版字段数组长度不一致。'
@@ -267,7 +268,7 @@ function Save-LinkRegistryEntries {
     try {
         $null = [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($filePath))
         # -InputObject 确保单条登记也写成 JSON 数组。临时文件与目标必须在同一目录，才能直接替换。
-        $json = ConvertTo-Json -InputObject @($Entries) -Depth 3 -ErrorAction Stop
+        $json = ConvertTo-Json -InputObject @($Entries) -Depth 5 -ErrorAction Stop
         [IO.File]::WriteAllText($tmp, $json)
         if ([IO.File]::Exists($filePath)) {
             [IO.File]::Replace($tmp, $filePath, [NullString]::Value)

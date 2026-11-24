@@ -7,6 +7,8 @@
 # （Junction / HardLink / Copy），覆盖非管理员环境的部署路径。
 # ==============================================================
 
+. (Join-Path $PSScriptRoot 'Sync-ConfigCopyDirectory.ps1')
+
 function Test-SymlinkAvailable {
     $tmp = [System.IO.Path]::GetTempFileName()
     $link = "$tmp-link"
@@ -63,6 +65,7 @@ function Invoke-ConfigLinkDeployment {
     $backupDir = Join-Path $BackupRoot "backup-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
     $backupCreated = $false
     $copyDeployed = $false
+    $unresolved = @()
     foreach ($item in $Items) {
         $src = Join-Path $RepoDir $item.Source
         if (-not (Test-Path $src)) {
@@ -75,7 +78,9 @@ function Invoke-ConfigLinkDeployment {
         $state = Get-ManagedLinkState $src $item.Target $RegistryPath
         if ($state.IsManaged) {
             Write-Host "已是正确链接，跳过: $($item.Target)" -ForegroundColor DarkGray
-            Set-LinkRegistryEntry -Path $RegistryPath -Target $item.Target -Source $src -LinkType $state.LinkType
+            if ($state.LinkType -ne 'CopyDirectory') {
+                Set-LinkRegistryEntry -Path $RegistryPath -Target $item.Target -Source $src -LinkType $state.LinkType
+            }
             continue
         }
 
@@ -146,16 +151,24 @@ function Invoke-ConfigLinkDeployment {
                 Write-Debug "创建 $kind 失败，降级为复制: $($_.Exception.Message)"
             }
             if (-not $linkType) {
-                # 最终回退：Copy 模式（不实时同步；文件由 Repair 按哈希刷新、
-                # 目录由 Repair 用 robocopy 镜像同步，psync 拉取后自动对齐）
                 if ($isDir) {
-                    Copy-Item -Path $src -Destination $item.Target -Recurse -Force
-                    $linkType = 'CopyDirectory'
+                    try {
+                        if (-not (Sync-ConfigCopyDirectory -Source $src -Target $item.Target -RegistryPath $RegistryPath -Create)) {
+                            $unresolved += $item.Target
+                            continue
+                        }
+                    }
+                    catch {
+                        Write-Warning "无法部署目录副本（$($item.Target)）：$($_.Exception.Message)"
+                        $unresolved += $item.Target
+                        continue
+                    }
+                    $copyDeployed = $true
+                    Write-Host "已复制: $($item.Source) -> $($item.Target)" -ForegroundColor Green
+                    continue
                 }
-                else {
-                    Copy-Item -Path $src -Destination $item.Target -Force
-                    $linkType = 'Copy'
-                }
+                Copy-Item -Path $src -Destination $item.Target -Force
+                $linkType = 'Copy'
                 $copyDeployed = $true
                 Write-Host "已复制: $($item.Source) -> $($item.Target)" -ForegroundColor Green
             }
@@ -170,5 +183,6 @@ function Invoke-ConfigLinkDeployment {
         BackupCreated = $backupCreated
         CopyDeployed  = $copyDeployed
         BackupDir     = $backupDir
+        Unresolved    = $unresolved
     }
 }

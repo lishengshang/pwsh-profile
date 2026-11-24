@@ -17,7 +17,7 @@ Describe 'Repair-ConfigLinks 五类链接修复' {
 
         # 按登记类型写一条注册表记录并运行修复（显式传参，不依赖跨块作用域）
         function Invoke-TestRepair {
-            param([hashtable]$Entry, [string]$RegistryPath, [string]$ScriptPath)
+            param([hashtable]$Entry, [string]$RegistryPath, [string]$ScriptPath, [switch]$PassThru)
             Save-LinkRegistryEntries -Path $RegistryPath -Entries @(
                 [pscustomobject]@{
                     Target   = $Entry.Target
@@ -25,7 +25,7 @@ Describe 'Repair-ConfigLinks 五类链接修复' {
                     LinkType = $Entry.LinkType
                 }
             )
-            & $ScriptPath -Registry $RegistryPath
+            & $ScriptPath -Registry $RegistryPath -PassThru:$PassThru
         }
     }
     AfterAll {
@@ -204,19 +204,210 @@ Describe 'Repair-ConfigLinks 五类链接修复' {
         (Get-Item $tgt -Force).LastWriteTime | Should -Be $old
     }
 
-    It 'CopyDirectory：robocopy /MIR 镜像同步' {
-        Set-Content -Path (Join-Path $src 'a.txt') -Value 'a'
-        Set-Content -Path (Join-Path $src 'b.txt') -Value 'b'
-        Copy-Item -Path $src -Destination $tgt -Recurse
-        # 目标侧漂移：b.txt 被删、多出 extra.txt
-        Remove-Item (Join-Path $tgt 'b.txt') -Force
-        Set-Content -Path (Join-Path $tgt 'extra.txt') -Value 'stale'
+    It 'CopyDirectory：旧登记保留既有文件，仅跟踪新复制的文件' {
+        $newSource = Join-Path $src 'shared\new.txt'
+        $newTarget = Join-Path $tgt 'shared\new.txt'
+        New-Item -ItemType Directory -Path (Split-Path $newSource), $tgt | Out-Null
+        Set-Content -LiteralPath $newSource -Value 'version 1'
+        Set-Content -LiteralPath (Join-Path $src 'equal.txt') -Value 'same'
+        Set-Content -LiteralPath (Join-Path $tgt 'equal.txt') -Value 'same'
+        Set-Content -LiteralPath (Join-Path $src 'edited.txt') -Value 'repo'
+        Set-Content -LiteralPath (Join-Path $tgt 'edited.txt') -Value 'personal'
+        Set-Content -LiteralPath (Join-Path $tgt 'extra.txt') -Value 'untracked'
+        $blockedSource = Join-Path $src 'blocked'
+        New-Item -ItemType Directory -Path $blockedSource | Out-Null
+        Set-Content -LiteralPath (Join-Path $blockedSource 'nested.txt') -Value 'repo'
+        Set-Content -LiteralPath (Join-Path $tgt 'blocked') -Value 'personal file'
+
+        $result = Invoke-TestRepair @{ Target = $tgt; Source = $src; LinkType = 'CopyDirectory' } -RegistryPath $reg -ScriptPath $repairScript -PassThru
+        $result.Unresolved | Should -Contain $tgt
+
+        Get-Content -LiteralPath (Join-Path $tgt 'edited.txt') | Should -Be 'personal'
+        Get-Content -LiteralPath (Join-Path $tgt 'extra.txt') | Should -Be 'untracked'
+        Get-Content -LiteralPath (Join-Path $tgt 'blocked') | Should -Be 'personal file'
+        Get-Content -LiteralPath $newTarget | Should -Be 'version 1'
+        $copyFiles = @(Get-LinkRegistryEntries $reg)[0].CopyFiles
+        @($copyFiles).Count | Should -Be 1
+        $copyFiles[0].Path | Should -BeExactly 'shared/new.txt'
+        $copyFiles[0].Hash | Should -Be (Get-FileHash -LiteralPath $newSource -Algorithm SHA256).Hash
+
+        Set-Content -LiteralPath $newSource -Value 'version 2'
+        Set-Content -LiteralPath (Join-Path $src 'equal.txt') -Value 'changed by repo'
+        $result = & $repairScript -Registry $reg -PassThru
+
+        $result.Unresolved | Should -Contain $tgt
+        Get-Content -LiteralPath $newTarget | Should -Be 'version 2'
+        Get-Content -LiteralPath (Join-Path $tgt 'equal.txt') | Should -Be 'same'
+        Remove-Item -LiteralPath (Join-Path $src 'equal.txt') -Force
+        & $repairScript -Registry $reg
+        Get-Content -LiteralPath (Join-Path $tgt 'equal.txt') | Should -Be 'same'
+    }
+
+    It 'CopyDirectory：首次部署登记文件，后续更新和删除未改动的副本' {
+        $srcFile = Join-Path $src 'nested\settings.txt'
+        $srcGone = Join-Path $src 'gone.txt'
+        $tgtFile = Join-Path $tgt 'nested\settings.txt'
+        $tgtGone = Join-Path $tgt 'gone.txt'
+        New-Item -ItemType Directory -Path (Split-Path $srcFile) | Out-Null
+        Set-Content -LiteralPath $srcFile -Value 'first'
+        Set-Content -LiteralPath $srcGone -Value 'delete me'
 
         Invoke-TestRepair @{ Target = $tgt; Source = $src; LinkType = 'CopyDirectory' } -RegistryPath $reg -ScriptPath $repairScript
 
-        Test-Path (Join-Path $tgt 'b.txt') | Should -BeTrue       # 源有目标无 → 补回
-        Test-Path (Join-Path $tgt 'extra.txt') | Should -BeFalse  # 目标有源无 → 清除
-        Test-Path (Join-Path $tgt 'a.txt') | Should -BeTrue
+        $copyFiles = @(Get-LinkRegistryEntries $reg)[0].CopyFiles
+        @($copyFiles).Count | Should -Be 2
+        ($copyFiles | Where-Object Path -CEQ 'nested/settings.txt').Hash | Should -Be (Get-FileHash -LiteralPath $srcFile -Algorithm SHA256).Hash
+        ($copyFiles | Where-Object Path -CEQ 'gone.txt').Hash | Should -Be (Get-FileHash -LiteralPath $srcGone -Algorithm SHA256).Hash
+        Set-Content -LiteralPath $srcFile -Value 'second'
+        Remove-Item -LiteralPath $srcGone -Force
+
+        $result = & $repairScript -Registry $reg -PassThru
+
+        $result.Unresolved | Should -BeNullOrEmpty
+        Test-Path -LiteralPath $tgtGone | Should -BeFalse
+        Get-Content -LiteralPath $tgtFile | Should -Be 'second'
+        $entry = @(Get-LinkRegistryEntries $reg)[0]
+        @($entry.CopyFiles).Count | Should -Be 1
+        $entry.CopyFiles[0].Path | Should -BeExactly 'nested/settings.txt'
+        $entry.CopyFiles[0].Hash | Should -Be (Get-FileHash -LiteralPath $srcFile -Algorithm SHA256).Hash
+
+        (Get-Item -LiteralPath $reg).LastWriteTimeUtc = [DateTime]::UtcNow.AddMinutes(-10)
+        $oldRegistryTime = (Get-Item -LiteralPath $reg).LastWriteTimeUtc
+        $oldRegistryHash = (Get-FileHash -LiteralPath $reg).Hash
+        $result = & $repairScript -Registry $reg -PassThru
+        $result.Unresolved | Should -BeNullOrEmpty
+        (Get-Item -LiteralPath $reg).LastWriteTimeUtc | Should -Be $oldRegistryTime
+        (Get-FileHash -LiteralPath $reg).Hash | Should -Be $oldRegistryHash
+    }
+
+    It 'CopyDirectory：保留用户对跟踪文件的<Change>并报告冲突' -ForEach @(
+        @{ Change = '修改'; RemoveLocal = $false }
+        @{ Change = '删除'; RemoveLocal = $true }
+    ) {
+        $srcFile = Join-Path $src 'settings.txt'
+        $tgtFile = Join-Path $tgt 'settings.txt'
+        Set-Content -LiteralPath $srcFile -Value 'original'
+        Invoke-TestRepair @{ Target = $tgt; Source = $src; LinkType = 'CopyDirectory' } -RegistryPath $reg -ScriptPath $repairScript
+        $originalHash = (Get-FileHash -LiteralPath $srcFile).Hash
+
+        if ($RemoveLocal) {
+            Remove-Item -LiteralPath $tgtFile -Force
+        }
+        else {
+            Set-Content -LiteralPath $tgtFile -Value 'personal edit'
+        }
+        Set-Content -LiteralPath (Join-Path $tgt 'extra.txt') -Value 'personal file'
+        Set-Content -LiteralPath $srcFile -Value 'repo edit'
+
+        $result = & $repairScript -Registry $reg -PassThru
+
+        $result.Unresolved | Should -Contain $tgt
+        Get-Content -LiteralPath (Join-Path $tgt 'extra.txt') | Should -Be 'personal file'
+        if ($RemoveLocal) {
+            Test-Path -LiteralPath $tgtFile | Should -BeFalse
+        }
+        else {
+            Get-Content -LiteralPath $tgtFile | Should -Be 'personal edit'
+        }
+        @(Get-LinkRegistryEntries $reg)[0].CopyFiles[0].Hash | Should -Be $originalHash
+    }
+
+    It 'CopyDirectory：拒绝可越界删除的历史相对路径且保持目录内容' {
+        $copySource = Join-Path $src '源码 目录'
+        New-Item -ItemType Directory -Path $copySource, $tgt | Out-Null
+        $outsideName = '外部 [保留].txt'
+        $outside = Join-Path $case $outsideName
+        $validName = '同目录 [配置].txt'
+        $validTarget = Join-Path $tgt $validName
+        # 两个根的父目录不同，越界路径在源侧缺失而在目标侧存在。
+        Set-Content -LiteralPath $outside -Value 'outside'
+        Set-Content -LiteralPath $validTarget -Value 'original'
+        Set-Content -LiteralPath (Join-Path $copySource $validName) -Value 'repo edit'
+        Save-LinkRegistryEntries -Path $reg -Entries @(
+            [pscustomobject]@{
+                Target    = $tgt
+                Source    = $copySource
+                LinkType  = 'CopyDirectory'
+                CopyFiles = @(
+                    [pscustomobject]@{ Path = $validName; Hash = (Get-FileHash -LiteralPath $validTarget).Hash }
+                    [pscustomobject]@{ Path = "../$outsideName"; Hash = (Get-FileHash -LiteralPath $outside).Hash }
+                )
+            }
+        )
+
+        $result = & $repairScript -Registry $reg -PassThru
+
+        $result.Unresolved | Should -Contain $tgt
+        Get-Content -LiteralPath $outside | Should -Be 'outside'
+        Get-Content -LiteralPath $validTarget | Should -Be 'original'
+    }
+
+    It 'CopyDirectory：源未更新时保留已跟踪的本地修改且不告警' {
+        $relative = '嵌套 [配置]\本地 文件.txt'
+        $srcFile = Join-Path $src $relative
+        $tgtFile = Join-Path $tgt $relative
+        $null = [IO.Directory]::CreateDirectory((Split-Path $srcFile))
+        Set-Content -LiteralPath $srcFile -Value 'original'
+        Invoke-TestRepair @{ Target = $tgt; Source = $src; LinkType = 'CopyDirectory' } -RegistryPath $reg -ScriptPath $repairScript
+        $originalHash = (Get-FileHash -LiteralPath $srcFile).Hash
+        Set-Content -LiteralPath $tgtFile -Value 'personal edit'
+
+        $result = & $repairScript -Registry $reg -PassThru
+
+        $result.Unresolved | Should -BeNullOrEmpty
+        Get-Content -LiteralPath $tgtFile | Should -Be 'personal edit'
+        $copyFiles = @(Get-LinkRegistryEntries $reg)[0].CopyFiles
+        $copyFiles[0].Path | Should -BeExactly '嵌套 [配置]/本地 文件.txt'
+        $copyFiles[0].Hash | Should -Be $originalHash
+
+        Set-Content -LiteralPath $srcFile -Value 'repo edit'
+        $result = & $repairScript -Registry $reg -PassThru
+
+        $result.Unresolved | Should -Contain $tgt
+        Get-Content -LiteralPath $tgtFile | Should -Be 'personal edit'
+    }
+
+    It 'CopyDirectory：目标的嵌套 Junction 不接收源更改' {
+        $srcNested = Join-Path $src 'outer\inner'
+        $tgtNested = Join-Path $tgt 'outer\inner'
+        $personal = Join-Path $case 'personal'
+        New-Item -ItemType Directory -Path $srcNested, $personal | Out-Null
+        Set-Content -LiteralPath (Join-Path $srcNested 'tracked.txt') -Value 'original'
+        Invoke-TestRepair @{ Target = $tgt; Source = $src; LinkType = 'CopyDirectory' } -RegistryPath $reg -ScriptPath $repairScript
+
+        Remove-Item -LiteralPath (Join-Path $tgtNested 'tracked.txt') -Force
+        Remove-Item -LiteralPath $tgtNested -Force
+        Set-Content -LiteralPath (Join-Path $personal 'tracked.txt') -Value 'original'
+        $null = New-Item -ItemType Junction -Path $tgtNested -Target $personal
+        Set-Content -LiteralPath (Join-Path $srcNested 'tracked.txt') -Value 'repo edit'
+        Set-Content -LiteralPath (Join-Path $srcNested 'new.txt') -Value 'repo addition'
+
+        $result = & $repairScript -Registry $reg -PassThru
+
+        $result.Unresolved | Should -Contain $tgt
+        Get-LinkTargetPath $tgtNested | Should -Be $personal
+        Get-Content -LiteralPath (Join-Path $personal 'tracked.txt') | Should -Be 'original'
+        Test-Path -LiteralPath (Join-Path $personal 'new.txt') | Should -BeFalse
+    }
+
+    It 'CopyDirectory：源的嵌套 Junction 不造成外部复制或删除已登记文件' {
+        $srcNested = Join-Path $src 'outer\inner'
+        $tgtNested = Join-Path $tgt 'outer\inner'
+        $personal = Join-Path $case 'outside-source'
+        New-Item -ItemType Directory -Path $srcNested, $personal | Out-Null
+        Set-Content -LiteralPath (Join-Path $srcNested 'tracked.txt') -Value 'original'
+        Invoke-TestRepair @{ Target = $tgt; Source = $src; LinkType = 'CopyDirectory' } -RegistryPath $reg -ScriptPath $repairScript
+
+        Remove-Item -LiteralPath (Join-Path $srcNested 'tracked.txt') -Force
+        Remove-Item -LiteralPath $srcNested -Force
+        Set-Content -LiteralPath (Join-Path $personal 'external.txt') -Value 'outside'
+        $null = New-Item -ItemType Junction -Path $srcNested -Target $personal
+
+        & $repairScript -Registry $reg
+
+        Get-Content -LiteralPath (Join-Path $tgtNested 'tracked.txt') | Should -Be 'original'
+        Test-Path -LiteralPath (Join-Path $tgtNested 'external.txt') | Should -BeFalse
+        Get-Content -LiteralPath (Join-Path $personal 'external.txt') | Should -Be 'outside'
     }
 
     It 'CopyDirectory：目标被降级成文件时清理重建' {

@@ -297,6 +297,7 @@ $deploy = Invoke-ConfigLinkDeployment -Items $linkItems -RepoDir $repoDir `
 $backupCreated = $deploy.BackupCreated
 $copyDeployed  = $deploy.CopyDeployed
 $backupDir     = $deploy.BackupDir
+if ($deploy.Unresolved.Count) { $pending += "未完成的目录副本（$($deploy.Unresolved.Count) 项）" }
 
 # 修复历史断链失败时，余下可独立完成的步骤继续进行。
 try {

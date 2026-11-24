@@ -99,4 +99,4 @@ uv 项目可用 `uv add` 管理项目依赖、用 `uv run` 执行命令。先退
 
 Neovim 插件声明在 `nvim/lua/plugins/` 中维护；`nvim/lazy-lock.json` 随配置提交。插件本体、Mason LSP、treesitter 产物由各设备重建。输入法切换配置位于 `nvim/lua/plugins/ime.lua`，其中 `switch_key` 需与本机系统设置一致。
 
-外部配置首次部署保留用户已有目标；受管目标以登记及磁盘状态决定修复行为，不保证所有同路径内容永远不变。尤其 CopyDirectory 会镜像删除多余文件，具体限制见[配置保护与修复](reference.md#配置保护与修复)。
+外部配置首次部署保留用户已有目标。CopyDirectory 刷新时保留个人新增与本机改动，仓库更新遇到冲突会告警。受管文件的更新条件见[配置保护与修复](reference.md#配置保护与修复)。

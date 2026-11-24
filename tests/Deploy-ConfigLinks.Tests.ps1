@@ -1,10 +1,9 @@
 ﻿# Pester 5/6 兼容测试：配置链接部署（Scripts/Deploy-ConfigLinks.ps1）
 # 用 -NoSymlink 注入强制走回退链（Junction / HardLink / Copy），
 # 覆盖非管理员环境的部署路径，因此不需要管理员权限。
-# 注 1：Copy 最终回退需要跨卷场景才能强制触发，单卷测试环境无法覆盖，
-#       Copy/CopyDirectory 的刷新逻辑由 Repair-ConfigLinks.Tests.ps1 验证。
-# 注 2：Pester 6 中每个块运行在独立 script scope，$script: 变量不再跨块共享，
-#       因此全部使用普通变量（动态作用域在 Pester 5/6 均成立）。
+# Mock Junction 创建可在单卷环境覆盖 CopyDirectory 的首次部署。
+# Pester 6 中每个块运行在独立 script scope，$script: 变量不再跨块共享，
+# 因此全部使用普通变量（动态作用域在 Pester 5/6 均成立）。
 
 Describe 'Invoke-ConfigLinkDeployment' {
     BeforeAll {
@@ -54,8 +53,70 @@ Describe 'Invoke-ConfigLinkDeployment' {
 
         $entries = @(Get-LinkRegistryEntries $reg)
         $entries.Count | Should -Be 2
-        ($entries | Where-Object { $_.LinkType -eq 'HardLink' }).Count | Should -Be 1
-        ($entries | Where-Object { $_.LinkType -eq 'Junction' }).Count | Should -Be 1
+        @($entries | Where-Object { $_.LinkType -eq 'HardLink' }).Count | Should -Be 1
+        @($entries | Where-Object { $_.LinkType -eq 'Junction' }).Count | Should -Be 1
+    }
+
+    It '目录建链失败时登记逐文件基准，重跑仍保留基准' {
+        Mock New-Item { throw 'Junction unavailable' } -ParameterFilter { $ItemType -eq 'Junction' }
+        $dirItem = $items[1]
+        $sourceFile = Join-Path $repo 'plugdir\init.lua'
+        $expectedHash = (Get-FileHash -LiteralPath $sourceFile).Hash
+
+        $result = Invoke-ConfigLinkDeployment -Items @($dirItem) -RepoDir $repo `
+            -RegistryPath $reg -BackupRoot $backupRoot -NoSymlink
+
+        $result.CopyDeployed | Should -BeTrue
+        $result.Unresolved | Should -BeNullOrEmpty
+        (Get-Item -LiteralPath $dirItem.Target -Force).LinkType | Should -BeNullOrEmpty
+        Get-Content -LiteralPath (Join-Path $dirItem.Target 'init.lua') | Should -Be 'nvim'
+        $initial = @(Get-LinkRegistryEntries $reg)
+        $initial.Count | Should -Be 1
+        $initial[0].LinkType | Should -Be 'CopyDirectory'
+        @($initial[0].CopyFiles).Count | Should -Be 1
+        $initial[0].CopyFiles[0].Path | Should -BeExactly 'init.lua'
+        $initial[0].CopyFiles[0].Hash | Should -Be $expectedHash
+
+        $again = Invoke-ConfigLinkDeployment -Items @($dirItem) -RepoDir $repo `
+            -RegistryPath $reg -BackupRoot $backupRoot -NoSymlink
+
+        $again.CopyDeployed | Should -BeFalse
+        $again.BackupCreated | Should -BeFalse
+        $again.Unresolved | Should -BeNullOrEmpty
+        $hardlink = $items[0]
+        $hardlinkSource = Join-Path $repo $hardlink.Source
+        $newItem = Get-Command -Name New-Item -CommandType Cmdlet
+        $null = & $newItem -ItemType HardLink -Path $hardlink.Target -Target $hardlinkSource
+        Set-LinkRegistryEntry -Path $reg -Target $hardlink.Target -Source $hardlinkSource -LinkType 'HardLink'
+        $entries = @(Get-LinkRegistryEntries $reg)
+        $entries.Count | Should -Be 2
+        $entries.LinkType | Should -Contain 'HardLink'
+        $directory = $entries | Where-Object LinkType -eq 'CopyDirectory'
+        @($directory.CopyFiles).Count | Should -Be 1
+        $directory.CopyFiles[0].Path | Should -BeExactly 'init.lua'
+        $directory.CopyFiles[0].Hash | Should -Be $expectedHash
+    }
+
+    It '目录建链假成功时保留指向用户目录的 Junction' {
+        $dirItem = $items[1]
+        $personal = Join-Path $case 'personal'
+        New-Item -ItemType Directory -Path $personal | Out-Null
+        Set-Content -LiteralPath (Join-Path $personal 'personal.lua') -Value 'user-data'
+        Mock New-Item {
+            $newItem = Get-Command -Name New-Item -CommandType Cmdlet
+            $outside = Join-Path (Split-Path (Split-Path $Path)) 'personal'
+            & $newItem -ItemType Junction -Path $Path -Target $outside -ErrorAction Stop
+        } -ParameterFilter { $ItemType -eq 'Junction' }
+
+        $result = Invoke-ConfigLinkDeployment -Items @($dirItem) -RepoDir $repo `
+            -RegistryPath $reg -BackupRoot $backupRoot -NoSymlink
+
+        $result.CopyDeployed | Should -BeFalse
+        $result.Unresolved | Should -Contain $dirItem.Target
+        Get-LinkTargetPath $dirItem.Target | Should -Be $personal
+        Get-Content -LiteralPath (Join-Path $personal 'personal.lua') | Should -Be 'user-data'
+        ((Get-ChildItem -LiteralPath $personal -Force).Name -join ',') | Should -BeExactly 'personal.lua'
+        @(Get-LinkRegistryEntries $reg).Count | Should -Be 0
     }
 
     It '重复部署幂等：已受管目标全部跳过，注册表不增长' {

@@ -53,8 +53,10 @@ Mason LSP、treesitter 产物在各设备 `$env:LOCALAPPDATA\nvim-data` 自动�
    单源维护在 `Scripts/Get-ManagedLinks.ps1`，setup 与修复脚本都引用它，改链接只改
    这一处。链接注册表（%LOCALAPPDATA%\pwsh-profile\linked-targets.json）记录
    Target/Source/LinkType 三元组，Repair 按原类型修复，勿只记路径。
-   历史登记不能作为删除后来个人配置的依据：普通目录和指向别处的有效链接
-   必须保留并告警；替换内容不同的失联文件或 Copy 前先备份，备份失败不得继续替换。
+   历史登记不能作为删除后来个人配置的依据：替代原链接的普通目录和指向别处的有效
+   链接必须保留并告警；替换内容不同的失联文件或 Copy 前先备份，备份失败不得继续替换。
+   CopyDirectory 只能用实际复制时记录的逐文件基准判断是否可更新或删除。须保留没有
+   基准的已有文件及本机增删改，不跟随源或目标目录内的重解析点。
    注意：git pull 和编辑器原子保存会弄断文件类硬链接，`psync`/`setup.ps1`
    结束时会自动调用 `Scripts/Repair-ConfigLinks.ps1` 修复——改动涉及被链接的
    配置文件后，无需手动处理链接。
